@@ -1,4 +1,4 @@
-# Silabs_AWS_EFR32IoT_Gateway
+# Silabs_AWS_IoT_Gateway
 IoT Ecosystem including multiple environmental Sensor to Gateway to AWS Cloud solution
 
 Platform to connect SENTIMATE (EFR32MG21+ZFM130) to AWS via Growhouse Gateway (Dragonboard 410C+Growhouse Mezzanine Card)

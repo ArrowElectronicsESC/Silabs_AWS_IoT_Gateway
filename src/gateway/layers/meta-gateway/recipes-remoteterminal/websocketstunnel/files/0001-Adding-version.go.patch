@@ -1,0 +1,18 @@
+From bcca77a70914ef1117bec24d4458d27d7a8a3eb6 Mon Sep 17 00:00:00 2001
+From: Shweta Mishra <shweta.mishra@einfochips.com>
+Date: Mon, 25 Nov 2019 13:17:51 +0530
+Subject: [PATCH] Adding version.go
+
+Signed-off-by: Shweta Mishra <shweta.mishra@einfochips.com>
+
+diff --git a/version.go b/version.go
+new file mode 100644
+index 0000000..f3dc4c7
+--- /dev/null
++++ b/version.go
+@@ -0,0 +1,2 @@
++package main
++const VV = "wstunnel dev - 2019-11-25 13:16:10 - master"
+-- 
+2.23.0
+

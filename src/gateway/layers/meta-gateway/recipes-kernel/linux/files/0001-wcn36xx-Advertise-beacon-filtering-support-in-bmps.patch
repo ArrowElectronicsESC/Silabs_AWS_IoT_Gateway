@@ -1,0 +1,42 @@
+From aa2c415faa7f5be34324f61c594af67d3fca221b Mon Sep 17 00:00:00 2001
+From: Loic Poulain <loic.poulain@linaro.org>
+Date: Thu, 18 Jun 2020 11:07:39 +0200
+Subject: [PATCH] wcn36xx: Advertise beacon filtering support in bmps
+
+In bmps mode, beacons are filtered, and firmware is in charge
+of monitoring the beacons and report changes or loss.
+
+mac80211 must be advertised about such change to prevent it's
+internal timer based beacon monitor to report beacon loss.
+
+Fix that by setting/clearing the IEEE80211_VIF_BEACON_FILTER
+vif flag on bmps entry/exit.
+
+Signed-off-by: Loic Poulain <loic.poulain@linaro.org>
+---
+ drivers/net/wireless/ath/wcn36xx/pmc.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/drivers/net/wireless/ath/wcn36xx/pmc.c b/drivers/net/wireless/ath/wcn36xx/pmc.c
+index 1976b80..2936aaf 100644
+--- a/drivers/net/wireless/ath/wcn36xx/pmc.c
++++ b/drivers/net/wireless/ath/wcn36xx/pmc.c
+@@ -28,6 +28,7 @@ int wcn36xx_pmc_enter_bmps_state(struct wcn36xx *wcn,
+ 	if (!ret) {
+ 		wcn36xx_dbg(WCN36XX_DBG_PMC, "Entered BMPS\n");
+ 		vif_priv->pw_state = WCN36XX_BMPS;
++		vif->driver_flags |= IEEE80211_VIF_BEACON_FILTER;
+ 	} else {
+ 		/*
+ 		 * One of the reasons why HW will not enter BMPS is because
+@@ -52,6 +53,7 @@ int wcn36xx_pmc_exit_bmps_state(struct wcn36xx *wcn,
+ 	}
+ 	wcn36xx_smd_exit_bmps(wcn, vif);
+ 	vif_priv->pw_state = WCN36XX_FULL_POWER;
++	vif->driver_flags &= ~IEEE80211_VIF_BEACON_FILTER;
+ 	return 0;
+ }
+ 
+-- 
+2.7.4
+

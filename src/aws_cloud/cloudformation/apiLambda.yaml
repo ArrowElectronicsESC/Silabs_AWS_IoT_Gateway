@@ -1,0 +1,116 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: An AWS Serverless Specification template describing your function.
+  
+Resources:
+  things:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: things
+      StageName: dev
+ 
+  createThings:
+    Type: 'AWS::Serverless::Function'
+    Properties:
+      Handler: lambda_function.lambda_handler
+      Runtime: python3.8
+      CodeUri: s3://lambda-deployment-package-efr32iotgateway-us-west-1/createThings-5f1abcbe-e55e-4e78-9755-a6e95bbef77e.zip
+      FunctionName: createThings
+      Description: ''
+      MemorySize: 128
+      Timeout: 3
+      Role: !GetAtt 
+        - LambdaExecutionRole
+        - Arn
+      Events:
+        Api1:
+          Type: Api
+          Properties:
+            RestApiId: !Ref things
+            Path: /creatething
+            Method: POST
+  deleteThings:
+    Type: 'AWS::Serverless::Function'
+    Properties:
+      Handler: lambda_function.lambda_handler
+      Runtime: python3.8
+      CodeUri: s3://lambda-deployment-package-efr32iotgateway-us-west-1/deleteThings-ae521e49-02ad-4609-9290-a99602e28fa7.zip
+      FunctionName: deleteThings
+      Description: ''
+      MemorySize: 128
+      Timeout: 3
+      Role: !GetAtt 
+        - LambdaExecutionRole
+        - Arn
+      Events:
+        Api1:
+          Type: Api
+          Properties:
+            RestApiId: !Ref things
+            Path: /deletething
+            Method: POST
+  renameDevice:
+    Type: 'AWS::Serverless::Function'
+    Properties:
+      Handler: lambda_function.lambda_handler
+      Runtime: python3.8
+      CodeUri: s3://lambda-deployment-package-efr32iotgateway-us-west-1/renameDevice-c58c2613-bcb0-4b05-882a-0a9213d9009a.zip
+      FunctionName: renameDevice
+      Description: ''
+      MemorySize: 128
+      Timeout: 3
+      Role: !GetAtt 
+        - LambdaExecutionRole
+        - Arn
+      Events:
+        Api1:
+          Type: Api
+          Properties:
+            RestApiId: !Ref things
+            Path: /renamedevice
+            Method: PUT
+  getUser:
+    Type: 'AWS::Serverless::Function'
+    Properties:
+      Handler: lambda_function.lambda_handler
+      Runtime: python3.8
+      CodeUri: s3://lambda-deployment-package-efr32iotgateway-us-west-1/getUser-84831371-f81d-4098-90f8-fb4100427937.zip
+      FunctionName: getUser
+      Description: ''
+      MemorySize: 128
+      Timeout: 3
+      Role: !GetAtt 
+        - LambdaExecutionRole
+        - Arn
+      Events:
+        Api1:
+          Type: Api
+          Properties:
+            RestApiId: !Ref things
+            Path: /getuser
+            Method: GET
+  LambdaExecutionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+        - 'arn:aws:iam::aws:policy/AWSIoTFullAccess'
+        - 'arn:aws:iam::aws:policy/AmazonSNSFullAccess'
+      Policies:
+        - PolicyName: DynamoDBAllAccess
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Action: 'dynamodb:*'
+                Effect: 'Allow'
+                Resource: '*'
+  

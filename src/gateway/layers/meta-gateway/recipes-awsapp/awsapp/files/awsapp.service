@@ -1,0 +1,12 @@
+[Unit]
+Description=AWSAPP start service
+After=mosquitto.service
+Requires=mosquitto.service
+
+[Service]
+ExecStart=/usr/bin/awsapp
+RestartSec=5sec
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

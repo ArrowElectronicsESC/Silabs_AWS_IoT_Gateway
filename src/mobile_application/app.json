@@ -1,0 +1,17 @@
+{
+  "name": "EFR32 IoT Gateway",
+  "softwareName":"GrowhouseGWSelene",
+  "displayName": "EFR32 IoT Gateway",
+  "version": "1.0.23",  
+  "selene": "0.0.0",
+  "gateway_discovery_name_prefix": "EFR32_gw_",
+  "allowExceptionsInDevMode": true,
+  "production": true,
+  "debug": false,
+  "apiDebug": false,
+  "bleDebug": false,
+  "liveChartDebug": false,
+  "qa": false,
+  "IOSLoginTimeout": 3000,
+  "deviceDiscoveryTimeout" : 210000
+ }

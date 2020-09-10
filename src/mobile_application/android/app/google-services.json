@@ -1,0 +1,55 @@
+{
+  "project_info": {
+    "project_number": "470381486771",
+    "firebase_url": "https://javarestauth.firebaseio.com",
+    "project_id": "javarestauth",
+    "storage_bucket": "javarestauth.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:470381486771:android:54358d89d8d51efb",
+        "android_client_info": {
+          "package_name": "com.growhouse"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "470381486771-cr62em4d1e1unmbn2shu1jdlivf4nefd.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.growhouse",
+            "certificate_hash": "86affb2ff40043e92400dd772a6d56051817d07b"
+          }
+        },
+        {
+          "client_id": "470381486771-a12mi3dagv7e0guu5st423ncoavnmp37.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB9Rlj-B3nE71EUr1n5atkJjHl7n6FRARg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "470381486771-a12mi3dagv7e0guu5st423ncoavnmp37.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "470381486771-ocp65vppnochl9pvnik74if21ic1r44b.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.einfochips.growhousemobileapp"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

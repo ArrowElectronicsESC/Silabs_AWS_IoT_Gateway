@@ -1,0 +1,45 @@
+From 6fe0265f848e873b0475cb179cd587226d1a01f6 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Daniel=20D=C3=ADaz?= <daniel.diaz@linaro.org>
+Date: Wed, 1 Nov 2017 13:39:55 -0600
+Subject: [PATCH] Build with LP64 mode for AArch64.
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+The effect of this is that LP64 will be used even when
+targetting ILP32.
+
+Signed-off-by: Daniel Díaz <daniel.diaz@linaro.org>
+---
+ Makefile | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/Makefile b/Makefile
+index e6bef47..cca4438 100644
+--- a/atf-fastboot/Makefile
++++ b/atf-fastboot/Makefile
+@@ -204,11 +204,11 @@ $(eval $(call assert_boolean,USE_COHERENT_MEM))
+ $(eval $(call add_define,USE_COHERENT_MEM))
+ 
+ ASFLAGS			+= 	-nostdinc -ffreestanding -Wa,--fatal-warnings	\
+-				-Werror -Wmissing-include-dirs			\
++				-Wno-error -Wmissing-include-dirs -mabi=lp64	\
+ 				-mgeneral-regs-only -D__ASSEMBLY__		\
+ 				${DEFINES} ${INCLUDES}
+ CFLAGS			+= 	-nostdinc -ffreestanding -Wall			\
+-				-Werror -Wmissing-include-dirs			\
++				-Wno-error -Wmissing-include-dirs -mabi=lp64	\
+ 				-mgeneral-regs-only -mstrict-align		\
+ 				-std=c99 -c -Os	${DEFINES} ${INCLUDES} -fno-pic
+ CFLAGS			+=	-ffunction-sections -fdata-sections		\
+@@ -216,6 +216,7 @@ CFLAGS			+=	-ffunction-sections -fdata-sections		\
+ 
+ LDFLAGS			+=	--fatal-warnings -O1
+ LDFLAGS			+=	--gc-sections
++LDFLAGS			+=	-m aarch64elf
+ 
+ 
+ CC			:=	${CROSS_COMPILE}gcc
+-- 
+2.7.4
+

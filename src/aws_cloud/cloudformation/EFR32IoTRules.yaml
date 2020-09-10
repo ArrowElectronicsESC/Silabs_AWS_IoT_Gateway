@@ -1,0 +1,138 @@
+AWSTemplateFormatVersion: 2010-09-09
+Parameters:
+      thresholdLambdaFunctionArn:
+        Type: String
+        NoEcho: true
+        Description: The arn of the lambda function
+      firehoseDeliveryStreamName:
+        Type: String
+        NoEcho: true 
+        Description: The delivery stream name where we put the firehose data
+
+Resources:
+  EFR32SensorThreshold:
+    Type: 'AWS::IoT::TopicRule'
+    Properties:
+      RuleName: EFR32_SensorThreshold
+      TopicRulePayload:
+        RuleDisabled: 'true'
+        Sql: SELECT * FROM 'gateway/+/telemetry'
+        Actions:
+          - Lambda:
+              FunctionArn: !Ref thresholdLambdaFunctionArn
+
+  EFR32WriteToDynamoDB:
+    Type: 'AWS::IoT::TopicRule'
+    Properties:
+      RuleName: EFR32_WriteToDynamoDB
+      TopicRulePayload:
+        RuleDisabled: 'true'
+        Sql: SELECT * FROM 'gateway/+/telemetry'
+        Actions:
+          - DynamoDBv2:
+              PutItem:
+                TableName: telemetry
+              RoleArn: !GetAtt EFR32DynamoDBAccessRole.Arn
+  
+  EFR32PutDataToFirehose:
+    Type: 'AWS::IoT::TopicRule'
+    Description: Sends data to Kinesis Firehose, which will be further utilised by Glue and Athena to Quicksight Dashboard
+    Properties:
+      RuleName: EFR32_PutDataToFirehose
+      TopicRulePayload:
+        RuleDisabled: 'true'
+        Sql: SELECT *, parse_time("dd-MM-yyyy HH:mm:ss", timestamp, "Etc/UTC") as time FROM 'gateway/+/telemetry'
+        Actions:
+          - Firehose:
+              DeliveryStreamName: !Ref firehoseDeliveryStreamName
+              Separator: "\n"
+              RoleArn: !GetAtt EFR32FirehoseDeliveryStreamRole.Arn
+
+  EFR32FirehoseDeliveryStreamRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - 'firehose.amazonaws.com'
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      Policies:
+        # Puts objects in RawMetricsBucket
+        - PolicyName: 'EFR32KinesisPolicy'
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:AbortMultipartUpload
+                  - s3:GetBucketLocation
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:ListBucket
+                  - s3:ListBucketMultipartUploads
+                  - glue:GetTable
+                  - glue:GetTableVersion
+                  - glue:GetTableVersions
+                Resource:
+                  # add glue resources
+                  # arn:aws:iam::454143665149:policy/service-role/KinesisFirehoseServicePolicy-EFR32_DataDeliveryStream-us-east-1-alt-alt-alt
+                  #- !Sub '${EFR32DeliveryStream.Arn}'
+                  #- !Sub '${EFR32DeliveryStream.Arn}/'
+                  #- !Sub '${EFR32DeliveryStream.Arn}/*'
+                  - '*'
+              - Effect: Allow
+                Action:
+                  - kinesis:DescribeStream
+                  - kinesis:GetShardIterator
+                  - kinesis:GetRecords
+                  - kinesis:ListShards
+                Resource:
+                  - '*'
+        # Write to CloudWatch
+        - PolicyName: EFR32DeliveryStreamLogging
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutDestination
+                  - logs:PutLogEvents
+                Resource:
+                  !Join
+                    - ''
+                    - - 'arn:aws:logs:'
+                      - !Ref AWS::Region
+                      - ':'
+                      - !Ref AWS::AccountId
+                      - ':log-group:*'
+
+  EFR32DynamoDBAccessRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - 'iot.amazonaws.com'
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      Policies:
+        # Puts objects in RawMetricsBucket
+        - PolicyName: 'EFR32DynamoDBAllAccess'
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'dynamodb:*'
+                Resource: '*'

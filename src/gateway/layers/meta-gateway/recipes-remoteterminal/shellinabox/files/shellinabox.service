@@ -1,0 +1,14 @@
+[Unit]
+Description=Web-based terminal
+After=network.target
+
+[Service]
+User=root
+Type=forking
+ExecStart=/usr/bin/shellinaboxd --port=4500 -c /etc/shellinabox/certs --background=/var/run/shellinabox.pid --disable-ssl
+ExecReload=/bin/kill -HUP /var/run/shellinabox.pid
+KillMode=process
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

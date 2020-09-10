@@ -1,0 +1,16 @@
+*.pyc
+*.pyo
+/*.patch
+tags
+cscope.files
+cscope.out
+cscope.in.out
+cscope.po.out
+*.swp
+.*.swp
+*~
+/.repo/
+/src/gateway/build*/
+/src/gateway/downloads*/
+/src/gateway/layers/conf
+/src/gateway/sstate-cache/

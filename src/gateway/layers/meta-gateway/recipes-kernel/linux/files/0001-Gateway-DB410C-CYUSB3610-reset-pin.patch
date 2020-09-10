@@ -1,0 +1,83 @@
+From 25125fe93b904f7622f9a0397654d14bccc8892e Mon Sep 17 00:00:00 2001
+From: eInfochips <eInfochips@eInfochips.com>
+Date: Fri, 25 Jan 2019 19:33:54 +0530
+Subject: [PATCH 1/1] Gateway-DB410C: CYUSB3610 reset pin
+
+- Used GPIO28 as reset function of CYUSB3610 chip.
+- Put cyusb3610 ic out of reset before reading or
+  writing register.
+
+Test-Done:
+----------
+- Check gpio status 1 after inserting cyusb3610.ko
+  module and 0 after removing cyusb3610.ko module.
+
+Note: Actual test will done once mezzanine board
+      of DB410C is assembled and available for
+      bringup.
+
+Signed-off-by: eInfochips <eInfochips@eInfochips.com>
+---
+ drivers/net/usb/cyusb3610.c | 30 ++++++++++++++++++++++++++++++
+ 1 file changed, 30 insertions(+)
+
+diff --git a/drivers/net/usb/cyusb3610.c b/drivers/net/usb/cyusb3610.c
+index 7d11b7b..397ab27 100644
+--- a/drivers/net/usb/cyusb3610.c
++++ b/drivers/net/usb/cyusb3610.c
+@@ -39,6 +39,7 @@
+ #include <linux/usb.h>
+ #include <linux/crc32.h>
+ #include <linux/if_vlan.h>
++#include <linux/gpio.h>
+ 
+ #if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 25)
+ #include <linux/usb/usbnet.h>
+@@ -2054,15 +2055,44 @@ static struct usb_driver cyusb3610_driver = {
+ 	.disconnect =	usbnet_disconnect,
+ };
+ 
++/* Reset GPIO for CYUSB3610 chip */
++/* Add GPIO chip base */
++#define CYUSB3610_RESET_GPIO	(390 + 28)
+ 
+ static int __init cyusb3610_init(void)
+ {
++	int ret = 0;
++
++	printk(KERN_ERR "CYUSB3610: module init");
++	ret = gpio_is_valid(CYUSB3610_RESET_GPIO);
++	if( ret < 0 )
++		printk(KERN_ERR "cyusb3610 reset gpio is invalid");
++
++	ret = gpio_request(CYUSB3610_RESET_GPIO, "cyusb3610 reset gpio");
++	if(ret != 0)
++		printk(KERN_ERR "cyusb3610 gpio request failed");
++
++	ret = gpio_direction_output(CYUSB3610_RESET_GPIO, 1);
++	if(ret != 0)
++	{
++		gpio_free(CYUSB3610_RESET_GPIO);
++		printk(KERN_ERR "failed to set gpio direction output");
++	}
++	mdelay(1);
++	// Reset low
++	gpio_set_value(CYUSB3610_RESET_GPIO, 0);
++	mdelay(1);
++	// Reset High
++	gpio_set_value(CYUSB3610_RESET_GPIO, 1);
++
+ 	return usb_register(&cyusb3610_driver);
+ }
+ module_init(cyusb3610_init);
+ 
+ static void __exit cyusb3610_exit(void)
+ {
++	gpio_set_value(CYUSB3610_RESET_GPIO, 0);
++	gpio_free(CYUSB3610_RESET_GPIO);
+ 	usb_deregister(&cyusb3610_driver);
+ }
+ module_exit(cyusb3610_exit);
+-- 
+2.7.4
+

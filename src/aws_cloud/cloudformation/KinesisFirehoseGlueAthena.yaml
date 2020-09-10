@@ -1,0 +1,199 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Template to create S3 Bucket and Firehose Stream and setup Glue Database and Crawler
+
+Resources:
+  EFR32KinesisLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/kinesisfirehose/EFR32DataDeliveryStream
+      RetentionInDays: 7
+
+  EFR32DataBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: 'efr32databucket'
+      AccessControl: Private
+      VersioningConfiguration: 
+        Status: Suspended
+
+  EFR32AthenaWorkgroup:
+    Type: AWS::Athena::WorkGroup
+    Properties:
+      Description: Read from S3 Bucket
+      Name: efr32_datagroup
+      WorkGroupConfiguration: 
+        ResultConfiguration:
+          OutputLocation: !Join
+                            - ''
+                            - - 's3://'
+                              - !Ref EFR32DataBucket
+                              - '/data' 
+ 
+
+  EFR32DeliveryStream:
+    Type: AWS::KinesisFirehose::DeliveryStream
+    Properties:
+      S3DestinationConfiguration:
+        BucketARN: !GetAtt EFR32DataBucket.Arn
+        BufferingHints:
+          IntervalInSeconds: 60
+          SizeInMBs: 64
+        CloudWatchLoggingOptions:
+          Enabled: true
+          LogGroupName: !Ref EFR32KinesisLogGroup
+          LogStreamName: 'S3Delivery'
+        CompressionFormat: 'UNCOMPRESSED'
+        EncryptionConfiguration:
+          NoEncryptionConfig: 'NoEncryption'
+        RoleARN: !GetAtt EFR32DeliveryStreamRole.Arn
+
+  EFR32GlueAthenaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - glue.amazonaws.com
+          Action:
+            - sts:AssumeRole
+      Path: "/"
+      Policies:
+      - PolicyName: AthenaAccess
+        PolicyDocument:
+          Statement:
+            - Effect: Allow
+              Action: athena:*
+              Resource: '*'
+      - PolicyName: GlueS3Access
+        PolicyDocument:
+          Statement:
+            - Effect: Allow
+              Action:
+                - glue:*
+                - iam:ListRolePolicies
+                - iam:GetRole
+                - iam:GetRolePolicy
+              Resource: '*'
+            - Effect: Allow
+              Action:
+                - s3:GetBucketLocation
+                - s3:ListBucket
+                - s3:ListAllMyBuckets
+                - s3:GetBucketAcl
+                - s3:GetObject
+              Resource: !Sub
+                - ${s3bucketARN}*
+                - { s3bucketARN: !GetAtt [EFR32DataBucket, Arn] }
+            - Effect: Allow
+              Action:
+                - s3:GetObject
+              Resource:
+                - 'arn:aws:s3:::crawler-public*'
+                - 'arn:aws:s3:::aws-glue-*'
+            - Effect: Allow
+              Action:
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Resource: 'arn:aws:logs:*:*:/aws-glue/*'
+
+  EFR32GlueDatabase:
+    Type: AWS::Glue::Database
+    Properties: 
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput:
+        Description: 'EFR32GlueDatabase'
+        Name: 'efr32gluedatabase'
+
+    
+  EFR32DataCrawler:
+    DependsOn:
+      - EFR32GlueDatabase
+      - EFR32GlueAthenaRole
+    Type: AWS::Glue::Crawler
+    Properties:
+      Role:
+        Fn::GetAtt: [ EFR32GlueAthenaRole, Arn ]
+      Description: 'EFR32DataCrawler'
+      Schedule:
+        # Run crawler every day every 30 mins 
+        ScheduleExpression: 'cron(0/30 * * * ? *)'
+      DatabaseName: { Ref: EFR32GlueDatabase }
+      Targets:
+        S3Targets:
+          - Path: 
+                    !Join
+                      - ''
+                      - - 's3://'
+                        - !Ref EFR32DataBucket
+                        - '/destination' 
+                  
+      TablePrefix: 'EFR32Data_'
+      Name: 'efr32datacrawler'
+
+  EFR32DeliveryStreamRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - 'firehose.amazonaws.com'
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      Policies:
+        # Puts objects in RawMetricsBucket
+        - PolicyName: 'EFR32KinesisPolicy'
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:AbortMultipartUpload
+                  - s3:GetBucketLocation
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:ListBucket
+                  - s3:ListBucketMultipartUploads
+                  - glue:GetTable
+                  - glue:GetTableVersion
+                  - glue:GetTableVersions
+                Resource:
+                  # add glue resources
+                  # arn:aws:iam::454143665149:policy/service-role/KinesisFirehoseServicePolicy-EFR32_DataDeliveryStream-us-east-1-alt-alt-alt
+                  #- !Sub '${EFR32DeliveryStream.Arn}'
+                  #- !Sub '${EFR32DeliveryStream.Arn}/'
+                  #- !Sub '${EFR32DeliveryStream.Arn}/*'
+                  - '*'
+              - Effect: Allow
+                Action:
+                  - kinesis:DescribeStream
+                  - kinesis:GetShardIterator
+                  - kinesis:GetRecords
+                  - kinesis:ListShards
+                Resource:
+                  - '*'
+        # Write to CloudWatch
+        - PolicyName: EFR32DeliveryStreamLogging
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutDestination
+                  - logs:PutLogEvents
+                Resource:
+                  !Join
+                    - ''
+                    - - 'arn:aws:logs:'
+                      - !Ref AWS::Region
+                      - ':'
+                      - !Ref AWS::AccountId
+                      - ':log-group:*'

@@ -1,0 +1,41 @@
+From eae49d9ae9cca48f8894dfa772a3c51248461570 Mon Sep 17 00:00:00 2001
+From: Shweta Mishra <shweta.mishra@einfochips.com>
+Date: Thu, 19 Mar 2020 15:40:41 +0530
+Subject: [PATCH] Enabled softkeyboard
+
+- Disable right mouse click to restrict user to modify default configurations
+- Enable soft key by default
+
+Signed-off-by: Shweta Mishra <shweta.mishra@einfochips.com>
+
+diff --git a/shellinabox/vt100.jspp b/shellinabox/vt100.jspp
+index fe31cb5..69bbecf 100755
+--- a/shellinabox/vt100.jspp
++++ b/shellinabox/vt100.jspp
+@@ -290,7 +290,7 @@ VT100.prototype.getUserSettings = function() {
+   this.visualBell           = typeof suppressAllAudio != 'undefined' &&
+                               suppressAllAudio;
+   this.autoprint            = true;
+-  this.softKeyboard         = false;
++  this.softKeyboard         = true;
+   this.blinkingCursor       = true;
+   this.disableAlt           = false;
+ 
+@@ -1428,14 +1428,6 @@ VT100.prototype.mouseEvent = function(event, type) {
+     }
+   }
+ 
+-  // Bring up context menu.
+-  if (button == 2 && !event.shiftKey) {
+-    if (type == MOUSE_DOWN) {
+-      this.showContextMenu(position[0], position[1]);
+-    }
+-    return this.cancelEvent(event);
+-  }
+-
+   // Simulate middle click pasting from inside of current window. Note that
+   // pasting content from other programs will not work in this way, since we
+   // don't have access to native clipboard.
+-- 
+2.24.0
+

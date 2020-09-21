@@ -1,21 +1,22 @@
 import React, { Component } from 'react';
 import {
-  RefreshControl, StyleSheet, Text, View, FlatList, ActivityIndicator, KeyboardAvoidingView,
+  RefreshControl, StyleSheet, Text, View, TextField, Button,FlatList, ActivityIndicator, KeyboardAvoidingView,
   TouchableOpacity, Image, Modal, Platform, Alert, PermissionsAndroid, TextInput,
   ScrollView, Picker, AsyncStorage,Dimensions,Linking
 } from 'react-native';
 import  DialogInput  from 'react-native-dialog-input-custom';
 import * as Constant from '../Constant';
 import * as Urls from '../Urls';
-import { displayName as appName, debug, bleDebug, liveChartDebug, deviceDiscoveryTimeout } from './../../app.json';
+import { displayName as appName, debug, bleDebug, liveChartDebug, deviceDiscoveryTimeout,software_sensor_discovery_name_prefix } from './../../app.json';
 import { connect } from 'react-redux';
 import { BleManager } from 'react-native-ble-plx';
 import {
   setBleManager, addBleDevice, removeBleDevice, authSetUser,uiStartLoading,uiStopLoading,removeBleDevicefromDevice
 } from '../store/actions/rootActions';
 import { RFPercentage, RFValue } from "react-native-responsive-fontsize";
-
-
+import { Buffer } from "buffer";
+import Amplify, { PubSub } from 'aws-amplify';
+import { AWSIoTProvider } from '@aws-amplify/pubsub/lib/Providers';
 import _ from 'lodash';
 import RNAndroidLocationEnabler from 'react-native-android-location-enabler';
 import Base64 from './../utils/Base64';
@@ -26,6 +27,12 @@ import MaterialIcon from 'react-native-vector-icons/MaterialIcons';
 import { Navigation } from 'react-native-navigation';
 import {WebView} from 'react-native-webview';
 const {width,height} = Dimensions.get('window');
+
+Amplify.addPluggable(new AWSIoTProvider(
+  {
+    aws_pubsub_region: '<AWS IOT core endpoint region>',
+    aws_pubsub_endpoint: 'wss://<AWS IOT core endpoint>/mqtt',
+}));
 
 class Devices extends Component {
 
@@ -57,6 +64,7 @@ class Devices extends Component {
   timeOutValueProvision = null;
   bleDevice=null;
   isVisible = false;
+  alreadyRegistredSensors = [];
 
   constructor(props) {
       super(props);
@@ -69,7 +77,9 @@ class Devices extends Component {
         errorCode: 0,
         refreshing: false,
         deviceDiscoveryModalVisible: false,
+        modalVisibleForSoftwareSensor: false,
         discoveredDevices: {},
+        discoveredSoftwareSensor: {},
         deviceRegistrationModalVisible: false,
         callbackRegistredDevices: 0,
         isRegistrationProcessCompleted: false,
@@ -110,10 +120,12 @@ class Devices extends Component {
 
          let growAreaId = this.growAreaId;
          })
+
          AsyncStorage.getItem('listGateway').then(response => {
                let gateways = JSON.parse(response);
                this.setState({gateways:gateways});
          });
+
        }
 
     getSensorList(){
@@ -142,6 +154,24 @@ class Devices extends Component {
         this.props.uiStopLoading();
 
       })
+    }
+
+    alreadyRegistredSensor(registeredSensors) {
+      try {
+        console.log('Registered sensor -0=0-0-------------------=-0-=0=-0-=0=-0=-0=-0=-0=-', registeredSensors);
+        var data = []
+        if (registeredSensors != undefined) {
+          registeredSensors.map((sensor) => {
+            console.log('sensor maccc id', sensor.deviceUId);
+            data.push(sensor.deviceUId);
+          });
+          return data;
+        }
+        return [];
+      } catch (e) {
+        console.log('error in alreadyRegistered data', e);
+        Alert.alert('Alert', 'Failed to get already provisioned sensors\'s list. Please try again.');
+      }
     }
 
     openHistoricalChart = (device) => {
@@ -239,6 +269,61 @@ class Devices extends Component {
         });
       }
     }
+      showSoftwareSensorDiscoveryModal(visible, inBackground, keepProvisionCallback, showAlert) {
+         console.log('flags', visible, inBackground, keepProvisionCallback, showAlert);
+
+         if (visible) {
+
+           this.props.bleManager.disable()
+           setTimeout(()=>{
+           this.props.bleManager.enable() },1000);
+           setTimeout(()=>{
+           const subscription = this.props.bleManager.onStateChange((state) => {
+             if (state === 'PoweredOn') {
+               if (!inBackground) this.setState({ modalVisibleForSoftwareSensor: true,waitingDeviceLoader: true });
+               console.log("Checking for gateway connection")
+
+               this.scanAndConnectForSoftwareSensor(inBackground);
+
+               subscription.remove();
+             }
+             else if (state === 'PoweredOff') {
+               this.props.bleManager.enable()
+             }
+           }, true);
+
+           },2000);
+         }
+         else if (showAlert) {
+
+           Alert.alert(
+             'Sensor Provision',
+             'Are you sure, you want to discard discovered sensors?',
+             [
+               {
+                 text: 'Cancel',
+                 onPress: () => console.log('Cancel Pressed'),
+                 style: 'cancel',
+               },
+               {
+                 text: 'OK', onPress: () => {
+                   this.setState({
+                     modalVisibleForSoftwareSensor: visible,
+                     errorCode: 1
+                   });
+                   this.stopDeviceScanUnsubscribeNotification(keepProvisionCallback);
+                 }
+               },
+             ],
+             { cancelable: false },
+           );
+         }
+         else {
+           this.setState({
+             modalVisibleForSoftwareSensor: visible
+           });
+         }
+       }
     async deleteSensorAPI(payload,device,sensorId,eui64)
     {
       let url = Urls.DELETE_GROWAREA;
@@ -268,6 +353,45 @@ class Devices extends Component {
             alert(err.message);
           }
       }
+   async swSensorDelete(sensor)
+       {
+         let url = Urls.DELETE_GROWAREA;
+         this.props.uiStartLoading("Deleting Selected Sensor");
+         payload = [{"gatewayId": sensor.gatewayId,"sensorId":sensor.sensorId,"deviceType":Constant.SENSOR_TYPE}];
+         console.log("payload for sensor delete ---:"+JSON.stringify(payload));
+         try{
+               const response = await fetch(url,{ method: "POST",headers: {'Accept': 'application/json','Content-Type' : 'application/json' },
+                       body: JSON.stringify(payload)})
+               console.log("res---"+JSON.stringify(response));
+               if(response.ok)
+               {
+                const msg = await response.json();
+                console.log("response in json---"+msg);
+                alert("Sensor deleted Successfully.");
+                this.setSensorListAfterDeletion(sensor.sensorId);
+                this.props.bleManager.disable()
+                setTimeout(() => {
+                  if(this.state.sensors.length == 0)
+                  {
+                    console.log('timer value on deletion sensor',global.timerValue);
+                    clearInterval(global.timerValue);
+                    global.timerValue = null;
+                  }
+                }, 2000);
+               
+               }
+
+               else
+               {
+                 this.props.uiStopLoading();
+                 alert("Something went wrong while deletion. Please try again");
+               }
+             }catch(err)
+             {
+               this.props.uiStopLoading();
+               alert(err.message);
+             }
+         }
 
       setSensorListAfterDeletion(sensorId)
       {
@@ -511,7 +635,362 @@ class Devices extends Component {
           }
         
         }
+     softWareSensorRegister(payload)
+    {
+        this.props.uiStartLoading("Provisioning Selected Sensors");
+        this.props.bleManager.stopDeviceScan();
 
+        this.setState({modalVisibleForSoftwareSensor: false,waitingDeviceLoader: false,discoveredSoftwareSensor:{}});
+        if(payload.length !== 0)
+        {
+
+            let connectedDevice;
+            let connectedResponse = [];
+            let apiFinalPayload = [];
+
+            payload.map((pay) =>
+            {
+            let apiPayload = {
+                gatewayId : pay.gatewayId,
+                sensorName : pay.device_name,
+                eui64 : pay.eui64,
+                deviceType : pay.device_type,
+                description : pay.description,
+            }
+            apiFinalPayload.push(apiPayload);
+          })
+            payload.map(async (item) => {
+            try {
+                    connectedDevice = await this.props.bleManager.connectToDevice(item.id, { timeout: 20000 });
+                    this.provisionSwGatewayApi(apiFinalPayload,payload,connectedDevice);
+                    connectedResponse.push(connectedDevice);
+            } catch (error) {
+                console.log("err-----------------",error);
+                alert("Unable to connect to sensor. Please try again....");
+                this.props.uiStopLoading();
+                return;
+            }
+        })
+        }
+        else
+        {
+            alert('Please select Sensor that you need to connect');
+            this.props.uiStopLoading();
+        }
+    }
+    connectCharacteristicsAndServices(device)
+    {
+          console.log("Discovering services and characteristics...");
+              this.setState({
+                bleMessage: 'Discovering services and characteristics...',
+                waitingDeviceLoader: true
+              })
+
+              device.discoverAllServicesAndCharacteristics()
+                .then((device) => {
+                  console.log("DeviceId:" + device.id);
+                  this.deviceCharacteristics[device.id] = {};
+                  this.deviceCharacteristics[device.id]['mtu'] = device.mtu;
+                  device.services().then(services => {
+                    console.log("Total Services size:" + services.length);
+                    if (services.length === 0) {
+                      console.log("No known services found in connected device.");
+                      this.setState({
+                        bleMessage: 'Required services not found. Disconnecting from device..',
+                        waitingDeviceLoader: false
+                      })
+                      device.cancelConnection();
+                    }
+                    else {
+                      this.setState({
+                        bleMessage: 'Services discovered..',
+                        waitingDeviceLoader: true
+                      })
+                    }
+
+                    services.forEach((service, i) => {
+                      if (service.uuid.startsWith(Constant.KNOWN_BLE_SERVICES.SERVICE_SW_SENSOR_PROVISION_UUID))
+                      {
+                        service.characteristics().then(characteristics => {
+                        console.log("Service UUID:" + service.uuid);
+                        console.log("Initial characteristics size:" + characteristics.length);
+                        characteristics = characteristics.filter((characteristic) => {
+
+                          characteristicPrefix = this.isKnownCharacteristic(characteristic);
+                          if (characteristicPrefix) {
+                            console.log("Characteristics UUID:" + characteristic.uuid);
+                            this.deviceCharacteristics[device.id][characteristicPrefix] = characteristic;
+                            return true;
+                          }
+                        });
+                        console.log("After filtering characteristics size:" + characteristics.length);
+
+                          console.log("deviceCharacteristics List:", JSON.stringify(Object.keys(this.deviceCharacteristics[device.id])));
+                            this.setState({
+                              bleMessage: 'Characteristics discovered..',
+                              waitingDeviceLoader: true
+                            })
+                            let sensors = this.state.sensors;
+                            let connectedSensor = sensors.find(item => item.deviceUId === device.id)
+                            let topic = 'gateway/'+connectedSensor.gatewayId+'/telemetry';
+                           var deviceHumidityCharFound = false;
+                           var deviceCo2CharFound = false;
+                           var deviceTemperatureCharFound =false;
+                           var devicePirCharFound = false;
+                            Object.keys(this.deviceCharacteristics[device.id]).map((characteristicPrefix) => {
+                             if (characteristicPrefix === Constant.KNOWN_BLE_CHARACTERISTICS.CHAR_SW_SENSOR_PIR_UUID) {
+                                this.devicePirChar = this.deviceCharacteristics[device.id][characteristicPrefix];
+                                devicePirCharFound = true;
+                              }
+                            if (characteristicPrefix === Constant.KNOWN_BLE_CHARACTERISTICS.CHAR_SW_SENSOR_HUMIDITY_UUID) {
+                               this.deviceHumidityChar = this.deviceCharacteristics[device.id][characteristicPrefix];
+                               deviceHumidityCharFound = true;
+                             }
+                            if (characteristicPrefix === Constant.KNOWN_BLE_CHARACTERISTICS.CHAR_SW_SENSOR_CO2_UUID) {
+                               this.deviceCo2Char = this.deviceCharacteristics[device.id][characteristicPrefix];
+                               deviceCo2CharFound = true;
+                             }
+                            if (characteristicPrefix === Constant.KNOWN_BLE_CHARACTERISTICS.CHAR_SW_SENSOR_TEMPERATURE_UUID) {
+                               this.deviceTemperatureChar = this.deviceCharacteristics[device.id][characteristicPrefix];
+                               deviceTemperatureCharFound = true;
+                             }
+                                    return !(deviceHumidityCharFound && deviceCo2CharFound && deviceTemperatureCharFound)
+                              });
+                            if(deviceHumidityCharFound && deviceCo2CharFound && deviceTemperatureCharFound && devicePirCharFound){
+                                 console.log('Found every characteristics value.......');
+
+                                 this.listenPirValue(this.devicePirChar,connectedSensor,topic);
+                                 this.listenHumidityValue(this.deviceHumidityChar,connectedSensor,topic);
+                                 this.listenCo2Value(this.deviceCo2Char,connectedSensor,topic);
+                                 this.listenTemperatureValue(this.deviceTemperatureChar,connectedSensor,topic);
+                            }else{
+                                alert("One of the required characteristic not found in connected sensor");
+                            }
+
+                        //  }
+
+                      })
+                     }
+                    })
+                  })
+                })
+                .catch((error) => {
+                  if (error.errorCode === 205) {
+                    console.log("ErrorMessage:" + error.message);
+                    this.props.onRemoveDevice(device.id);
+                    setTimeout(() => {
+                      this.checkForGatewayConnection();
+                    }, 1000);
+                  }
+                  else {
+                    this.setState({
+                      bleMessage: 'Error: Unable to connect to Gateway. Please try adding sensor again.',
+                      waitingDeviceLoader: false
+                    })
+                    console.log("Error: " + error.message)
+                    console.log("ErrorCode:" + error.errorCode)
+                    alert('No readable characteristics in connected Sensor');
+//                    device.cancelConnection().catch(error => {
+//                      console.log("Sensor is already disconnected." + error.message);
+//                    });
+                  }
+                })
+    }
+
+ listenPirValue = (devicePirChar,connectedSensor,topic) => {
+
+     this.pirCharSubscription = devicePirChar.monitor((error, characteristic) => {
+       if (error) {
+         console.log("Error:" + error.message + "\nErrorCode:" + error.errorCode + '\nPirCharacteristicsSubscription');
+         if (this.state.errorCode === 1) {
+           console.log("Error:" + error.message + "\nErrorCode:" + error.errorCode + '\nPirCharacteristicsSubscription');
+         }
+       }
+       else {
+
+               let value = Buffer.from(characteristic.value, "base64");
+                pirValue = value.toString("hex");
+                console.log('PIR Value--------',pirValue);
+                console.log('Topic-------------------',topic);
+                let payload = {"sensorName": connectedSensor.device_name,
+                               "gatewayId" : connectedSensor.gatewayId,
+                               "sensorId" : connectedSensor.sensorId,
+                               "timestamp":Date.now().toString(),
+                               "PIR":Number(pirValue)};
+                console.log('Payload---------------',payload);
+
+                PubSub.publish(topic,payload);
+
+       }
+     }, 'myPirTransactionValue');
+   }
+   listenCo2Value = (deviceCo2Char,connectedSensor,topic) => {
+
+        this.co2CharSubscription = deviceCo2Char.monitor((error, characteristic) => {
+          if (error) {
+            console.log("Error:" + error.message + "\nErrorCode:" + error.errorCode + '\nCo2CharacteristicsSubscription');
+            if (this.state.errorCode === 1) {
+              console.log("Error:" + error.message + "\nErrorCode:" + error.errorCode + '\nC02CharacteristicsSubscription');
+            }
+          }
+          else {
+
+                let value = this.convertValueToDecimal(characteristic);
+                console.log('Co2 value----------',value);
+                console.log('Topic-------------------',topic);
+                let payload = {"sensorName": connectedSensor.device_name,
+                               "gatewayId" : connectedSensor.gatewayId,
+                               "sensorId" : connectedSensor.sensorId,
+                               "timestamp":Date.now().toString(),
+                               "CO2": Number(value)};
+                console.log('Payload---------------',payload);
+
+                PubSub.publish(topic,payload);
+
+          }
+        }, 'myCo2TransactionValue');
+   }
+   listenHumidityValue = (deviceHumidityChar,connectedSensor,topic) => {
+
+        this.humidityCharSubscription = deviceHumidityChar.monitor((error, characteristic) => {
+          if (error) {
+            console.log("Error:" + error.message + "\nErrorCode:" + error.errorCode + '\nHumidityCharacteristicsSubscription');
+            if (this.state.errorCode === 1) {
+              console.log("Error:" + error.message + "\nErrorCode:" + error.errorCode + '\nHumidityCharacteristicsSubscription');
+            }
+          }
+          else {
+
+            let value = this.convertValueToDecimal(characteristic);
+
+            let humidityValue = (value/100);
+
+            console.log('Humidity value-------',humidityValue);
+            console.log('Topic-------------------',topic);
+                let payload = {"sensorName": connectedSensor.device_name,
+                               "gatewayId" : connectedSensor.gatewayId,
+                               "sensorId" : connectedSensor.sensorId,
+                               "timestamp":Date.now().toString(),
+                               "humidity": humidityValue};
+            console.log('Payload---------------',payload);
+
+            PubSub.publish(topic,payload);
+
+
+          }
+        }, 'myHumidityTransactionValue');
+
+
+    }
+    listenTemperatureValue = (deviceTemperatureChar,connectedSensor,topic) => {
+
+         this.temperatureCharSubscription = deviceTemperatureChar.monitor((error, characteristic) => {
+           if (error) {
+             console.log("Error:" + error.message + "\nErrorCode:" + error.errorCode + '\nTemperatureCharacteristicsSubscription');
+             if (this.state.errorCode === 1) {
+               console.log("Error:" + error.message + "\nErrorCode:" + error.errorCode + '\nTemperatureCharacteristicsSubscription');
+             }
+           }
+           else {
+
+            let value = this.convertValueToDecimal(characteristic);
+
+            let temperatureValue = (value/100);
+
+            temperatureValue = ((temperatureValue * 9)/5) + 32;
+
+            temperatureValue = parseInt(temperatureValue * 100 + 0.5);
+
+            temperatureValue = temperatureValue/100;
+
+            console.log('Temperature value-------',temperatureValue);
+
+            console.log('Topic-------------------',topic);
+            let payload = {"sensorName": connectedSensor.device_name,
+                           "gatewayId" : connectedSensor.gatewayId,
+                           "sensorId" : connectedSensor.sensorId,
+                           "timestamp":Date.now().toString(),
+                           "temperature":temperatureValue};
+            console.log('Payload---------------',payload);
+
+            PubSub.publish(topic,payload);
+
+
+           }
+         }, 'myTemperatureTransactionValue');
+    }
+
+    convertValueToDecimal = (characteristic) => {
+
+            let value = Buffer.from(characteristic.value, "base64");
+            valueBigEndian = value.toString("hex");
+
+            let firstString = valueBigEndian.toString().slice(2);
+            let secondString = valueBigEndian.toString().slice(0,2);
+
+            valueLittleEndian = firstString + secondString;
+
+            var converter = require('hex2dec');
+
+            var dec = converter.hexToDec(valueLittleEndian.toString());
+
+            return dec;
+
+    }
+
+    async provisionSwGatewayApi(apipayload,payload,connectedDevice) {
+        this.props.uiStartLoading("Provisioning software sensor ...");
+        let url = Urls.CREATE_GROWAREA;
+        console.log("payload for sensor provision ---:" + JSON.stringify(apipayload));
+        try {
+          const response = await fetch(url, {
+            method: "POST", headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+            body: JSON.stringify(apipayload)
+          })
+          console.log("res---" + JSON.stringify(response));
+          if (response.ok) {
+            const msg = await response.json();
+            console.log("response in json---" + JSON.stringify(msg));
+            let sensorId = msg["thing"][0]["thingName"];
+            console.log("SensorId------------------",sensorId);
+            let finalSensors = this.state.sensors;
+            payload.map((item) => {
+                item.sensorId = sensorId;
+                finalSensors.push(item);
+            });
+
+            console.log('Total Sensor-------',finalSensors);
+             AsyncStorage.setItem('sensorList', JSON.stringify(finalSensors)).then((token) => {
+                this.setState({ sensors });
+              }).catch((error) => {
+                console.log('error in saving name', error);
+              })
+             this.callGetUserAPI();
+             this.connectCharacteristicsAndServices(connectedDevice);
+
+             alert('Sensor Provisioned Successfully');
+             this.props.uiStopLoading();
+
+             this._onRefresh();
+
+          }
+          else {
+            this.props.bleManager.destroy();
+             this.props.onSetBleManager(new BleManager());
+             this.props.bleManager.disable()
+             setTimeout(()=>{this.props.bleManager.enable() },1000);
+            this.props.uiStopLoading();
+            alert("Something went wrong while provision sensor. Please try again");
+          }
+        } catch (err) {
+            this.props.bleManager.destroy();
+            this.props.onSetBleManager(new BleManager());
+            this.props.bleManager.disable()
+            setTimeout(()=>{this.props.bleManager.enable() },1000);
+          this.props.uiStopLoading();
+          alert("Something went wrong while provision sensor. Please try again");
+        }
+      }
 
     factoryResetDevice(payload,sensorId)
     {
@@ -1042,6 +1521,7 @@ class Devices extends Component {
             }
             else {
               Promise.resolve(requestLocationPermission())
+              Promise.resolve(requestLocationPermission())
                 .then(sources => {
                   this.showDeviceDiscoveryModal(true, inBackground);
                   return;
@@ -1093,7 +1573,6 @@ class Devices extends Component {
           console.log("Gateway Name:" + device.name + "\nDeviceId:" + device.id);
           console.log(this.growAreaUId + "=" + device.id + "=");
 
-     //     if (device.name.indexOf(this.props.selectedGrowArea.macId) !== -1 || bleDebug) {
             if (bleDebug) this.growAreaUId = device.id;
             clearTimeout(this.timeOutValueProvision);
             this.props.bleManager.stopDeviceScan();
@@ -1230,7 +1709,6 @@ scanAndConnectForDeleteSensor = (inBackground,payload,sensorId,eui64) => {
           {
             clearTimeout(this.timeOutValue);
             this.props.bleManager.stopDeviceScan();
-           // this.props.onSignoutDisconnect(device)
             console.log("Connecting to Gateway for deletion");
             this.GatewayMacID = device.id;
             if (!inBackground) {
@@ -1251,6 +1729,113 @@ scanAndConnectForDeleteSensor = (inBackground,payload,sensorId,eui64) => {
       this.scanAndConnectForDeleteSensor(inBackground,payload,sensorId,eui64);
     }
   }
+  scanAndConnectForSoftwareSensor = (inBackground) => {
+    this.alreadyRegistredSensors = this.alreadyRegistredSensor(this.state.sensors);
+    let discoveredSoftwareSensor = {};
+    let discoveryResponse = {};
+      if (this.props.bleManager) {
+        if (!inBackground) {
+          this.setState({
+            waitingDeviceLoader: true,
+            bleMessage: 'Searching for Available Sensors Over BLE....'
+          })
+        }
+
+        console.log("Started device scan...");
+         this.timeOutValueProvision = setTimeout(() => {
+                       this.setState({ modalVisibleForSoftwareSensor: false, waitingDeviceLoader: false });
+                       this.props.bleManager.stopDeviceScan();
+                       alert('Sensor is not available over BLE. Please try again');
+                       this.props.uiStopLoading();
+          }, 20000)
+        this.props.bleManager.startDeviceScan(null, null, (error, device) => {
+
+          if (error) {
+            clearTimeout(this.timeOutValueProvision);
+            console.log('ErrorCode:' + error.errorCode);
+            this.setState({ modalVisible: false });
+            if (error.errorCode === 101) {
+              //Device is not authorized to use BluetoothLE
+              if (Platform.OS === 'ios') {
+                alert(appName + ' app wants to use location services.. please provide access.')
+              }
+              else {
+                Promise.resolve(requestLocationPermission())
+                  .then(sources => {
+                    this.showSoftwareSensorDiscoveryModal(true, inBackground,true,false);
+                    return;
+                  }).catch(error => {
+                    if (!inBackground) {
+                      this.setState({
+                        bleMessage: 'Error: Unable to connect to Gateway. Please try adding Gateway again.',
+                        waitingDeviceLoader: false
+                      })
+                    }
+                    this.scanAndConnectForSoftwareSensor(inBackground);
+                  });
+              }
+            }
+            else if (error.errorCode === 601) {
+              //Location services are disabled
+              if (Platform.OS === 'ios') {
+                alert(appName + ' app wants to use location services.. please enable it.')
+                if (!inBackground) {
+                  this.showSoftwareSensorDiscoveryModal(true, inBackground,true,false);
+                }
+              }
+              else {
+                RNAndroidLocationEnabler.promptForEnableLocationIfNeeded({ interval: 10000, fastInterval: 5000 })
+                  .then(data => {
+                    console.log(data);
+                    if (!inBackground) this.showSoftwareSensorDiscoveryModal(true, inBackground,true,false);
+                    return;
+                  }).catch(error => {
+                    console.log(error);
+                    if (!inBackground) this.showSoftwareSensorDiscoveryModal(true, inBackground,true,false);
+                    return;
+                  });
+              }
+            }
+            else {
+              console.log(error.errorCode + ":" + error.message);
+              if (!inBackground) {
+                this.setState({
+                  bleMessage: 'Gateway scan failed.',
+                  waitingDeviceLoader: false
+                })
+              }
+            }
+            return;
+          }
+          console.log('already registered sensor mac id',this.alreadyRegistredSensors);
+          if (device.name && device.id && device.name.startsWith(software_sensor_discovery_name_prefix) && !(this.alreadyRegistredSensors.includes(device.id))) {
+             clearTimeout(this.timeOutValueProvision);
+              console.log('device found so stop interval and scanning');
+              this.props.bleManager.stopDeviceScan();
+
+                let payload = {};
+                  payload.decision = false;
+                  payload.device_name = '';
+                  payload.device_type = Constant.SENSOR_TYPE;
+                  payload.description = 'EFR32';
+                  payload.gatewayId = this.state.gateways[0].gatewayId;
+                  payload.deviceUId = device.id;
+                  payload.eui64 = device.id;
+                  payload.sensorId = '';
+                  payload.id = device.id;
+                  discoveryResponse[device.id] = payload;
+                  console.log('device--==', discoveryResponse);
+                  this.setState({discoveredSoftwareSensor:discoveryResponse})
+
+          }
+
+        });
+      }
+      else {
+        this.props.onSetBleManager(new BleManager());
+        this.scanAndConnectForSoftwareSensor(inBackground);
+      }
+    }
   tryDeviceConnectionForDeletion = (payload,device, inBackground,sensorId,eui64) => {
 
             device.connect()
@@ -1619,9 +2204,16 @@ async updateSensorName (value,device)
                     },
                     {
                        text: 'Delete', onPress: () => {
+                      if((this.state.gateways[0]).gatewayType === Constant.GATEWAY_TYPE_VALUE_SW)
+                      {
+                            this.swSensorDelete(info.item);
+                      }
+                      else
+                      {
                         this.setState({gatewayforSensor:info.item.gatewayId});
                         this.showDeviceDiscoveryModalForDeletionOfSensor(true,false,info.item.sensorId,info.item.eui64);
                        }
+                      }
                      },
                     ],
                     { cancelable: true }
@@ -1648,6 +2240,7 @@ async updateSensorName (value,device)
                          cancelButtonText="CANCEL"
                          submitButtonText="RENAME"
                />
+
             </View>
 
           );
@@ -1663,6 +2256,7 @@ async updateSensorName (value,device)
     }
 
   render() {
+
       let growAreaId = this.props.selectedGrowArea ? this.growAreaId : null;
 
       listData = this.getSensorList() || [];
@@ -1693,7 +2287,7 @@ async updateSensorName (value,device)
                   renderItem={(info) => (
                     this.renderControls(info)
                   )}
-                //  keyExtractor={(item) => item.eui64.toString()}
+                  keyExtractor={(item) => item.eui64.toString()}
                   refreshControl={
                     <RefreshControl
                       refreshing={this.state.refreshing}
@@ -1768,12 +2362,121 @@ async updateSensorName (value,device)
           {this.state.bleMessage && <Text style={styles.scanText}>{this.state.bleMessage}</Text>}
         </View>
       );
+      let softwareGatewayDiscoveryContainer = (
+              <View style={styles.scanContainer}>
+                <Image
+                  source={require('../../assets/images/scan.png')}
+                  style={styles.scanImage}
+                />
+                {this.state.waitingDeviceLoader ? <ActivityIndicator size='large' color={Constant.RED_COLOR} style={{ marginTop: 20 }} /> : <View></View>}
+                {this.state.bleMessage && <Text style={styles.scanText}>{this.state.bleMessage}</Text>}
+              </View>
+            );
+      let payload = [];
+      let deviceList = Object.keys(this.state.discoveredSoftwareSensor).length;
+      if (deviceList > 0) {
+        softwareGatewayDiscoveryContainer = (
+          <View style={styles.deviceListContainer}>
+            <View style={{ alignItems: "center", marginBottom: 6, backgroundColor: Constant.WHITE_BACKGROUND_COLOR }}><Text>{deviceList} {deviceList === 1 ? 'Sensor' : 'Sensors'} found</Text></View>
+            <KeyboardAvoidingView style={{ flex: 1, }} behavior="height" enabled>
+              <FlatList
+                removeClippedSubviews={false}
+                 keyboardDismissMode='on-drag'
+                 extraData = {this.state.discoveredSoftwareSensor }
+                 data={Object.values(this.state.discoveredSoftwareSensor)}
+
+                          renderItem={(info) =>
+                            (
+                              <View style={styles.gatewayItem}>
+                                <Image
+                                        source={require('../../assets/images/device_48.png')}
+                                         style={styles.deviceIcon}
+                                  />
+                                 <View style={{ width: '40%', paddingRight: 10, flexDirection: 'column' }}>
+                                        <Text style={{ fontSize: 10 }}>Sensor Name</Text>
+                                        <TextInput
+                                            placeholder='Sensor Name'
+                                            editable={!this.state.discoveredSoftwareSensor[info.item.id].decision}
+                                            style={{ borderColor: 'gray', borderBottomWidth: 1, padding: 0 }}
+                                            onChangeText={(text) => {
+                                              let discoveredSoftwareSensor = this.state.discoveredSoftwareSensor
+                                              discoveredSoftwareSensor[info.item.id].device_name = text;
+                                              this.setState({
+                                                discoveredSoftwareSensor: discoveredSoftwareSensor
+                                              })
+                                            }}
+                                            value={this.state.discoveredSoftwareSensor[info.item.id].device_name}
+                                          />
+                                        <Text style={{ fontSize: 10, marginTop: 5 }}>UId</Text>
+                                        <Text numberOfLines={1} style={{ fontSize: 12, fontWeight: "bold" }}>{info.item.id}</Text>
+                                 </View>
+                                 <View style={{ width: '35%', flexDirection: 'column' }}>
+                                          <Text style={{ fontSize: 10, marginTop: 5 }}>Sensor Type</Text>
+                                          <Text style={{ fontSize: 12, fontWeight: "bold" }}>Sentimate</Text>
+                                 </View>
+                                 <CheckBox
+                                              style={{ margin: 15, justifyContent: 'center', alignItems: 'center' }}
+                                              onClick={() => {
+                                                let regEx = /^[a-zA-Z][a-zA-Z_.]{0,1}[ a-z|A-Z|0-9|_.]*$/;
+                                                if (!this.state.discoveredSoftwareSensor[info.item.id].device_name ||
+                                                  this.state.discoveredSoftwareSensor[info.item.id].device_name.trim() === '' ||
+                                                  this.state.discoveredSoftwareSensor[info.item.id].device_name.length > 15 ||
+                                                  !regEx.test(this.state.discoveredSoftwareSensor[info.item.id].device_name.trim())) {
+                                                  Alert.alert("Please enter valid Sensor name.", 'Invalid Sensor name! Maximum length is 15. Name should start with alphabet and may contain dot, underscore, space and numeric value.');
+                                                }
+                                                else {
+
+                                                  console.log("DeviceName:" + this.state.discoveredSoftwareSensor[info.item.id].device_name);
+                                                  let discoveredSoftwareSensor = this.state.discoveredSoftwareSensor;
+                                                  console.log(JSON.stringify(discoveredSoftwareSensor));
+
+                                                  discoveredSoftwareSensor[info.item.id].decision = !discoveredSoftwareSensor[info.item.id].decision;
+                                                  discoveredSoftwareSensor[info.item.id].sensorName = discoveredSoftwareSensor[info.item.id].device_name;
+
+
+                                                  this.setState({
+                                                    discoveredSoftwareSensor: discoveredSoftwareSensor,
+                                                  })
+                                                  console.log(JSON.stringify(discoveredSoftwareSensor));
+                                                }
+                                              }}
+                                              checkBoxColor='green'
+                                              isChecked={this.state.discoveredSoftwareSensor[info.item.id].decision}
+                                      />
+                                 </View>
+                            )}
+                            keyExtractor={(item) => item.eui64.toString()}
+                        />
+                        </KeyboardAvoidingView>
+                        <View style = {{width:'100%',flexDirection:'row'}}>
+                       <View style= {{alignItems:'flex-start',alignContent:'flex-start',alignSelf:'flex-start',justifyContent:'flex-start'}}>
+                        <TouchableOpacity style={[styles.roundButton, styles.registerButton]} onPress={() => {
+                                 Object.entries(this.state.discoveredSoftwareSensor).map(([key, value]) => {
+                                    if(value.decision === true)
+                                       payload.push(value);
+                                 })
+                                 this.softWareSensorRegister(payload);
+                        }}>
+                             <Text style={[styles.buttonText]}>REGISTER</Text>
+                        </TouchableOpacity>
+                        </View>
+                       <View style= {{paddingLeft: width * 0.35}}>
+                       <TouchableOpacity style={[styles.roundButton, styles.cancelButton]} onPress={() => {
+                       this.setState({modalVisibleForSoftwareSensor: false,discoveredSoftwareSensor:{}})
+                       }}>
+                               <Text style={[styles.buttonText]}>CANCEL</Text>
+                       </TouchableOpacity>
+                      </View>
+                       </View>
+                      </View>
+                    );
+                  }
 
       let deviceListSize = Object.keys(this.state.discoveredDevices).length;
       if (deviceListSize > 0 && !this.provisionRequestSent) {
         deviceDiscoveryContainer = (
           <View style={styles.deviceListContainer}>
-            <View style={{ alignItems: "center", marginBottom: 6, backgroundColor: Constant.WHITE_BACKGROUND_COLOR }}><Text>{deviceListSize} {deviceListSize === 1 ? 'Device' : 'Devices'} found</Text></View>
+            <View style={{ alignItems: "center", marginBottom: 6, backgroundColor: Constant.WHITE_BACKGROUND_COLOR }}><Text>{deviceListSize} {deviceListSize === 1 ? 'Sensor' : 'Sensors'} found</Text></View>
             <KeyboardAvoidingView style={{ flex: 1, }} behavior="height" enabled>
               <FlatList
                 removeClippedSubviews={false}
@@ -1841,7 +2544,7 @@ async updateSensorName (value,device)
                     </View>
                   </View>
                 )}
-              //  keyExtractor={(item) => item.eui64.toString()}
+                keyExtractor={(item) => item.eui64.toString()}
               />
             </KeyboardAvoidingView>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
@@ -1916,8 +2619,39 @@ async updateSensorName (value,device)
                <View style={styles.listContainer}>
                 <View style={{width:'100%' ,flexDirection:'row',alignItems:'flex-end',alignContent:'flex-end',alignSelf:'flex-end',justifyContent:'flex-end'}}>
 
-                    <TouchableOpacity style={[styles.roundButton, { backgroundColor: Constant.RED_COLOR }]} onPress={() => {
+                    <TouchableOpacity style={[styles.roundButton, { backgroundColor: Constant.RED_COLOR }]} onPress={async() => {
+                   if(!this.props.isLoading)
+                   {
+                   if((this.state.gateways[0]).gatewayType === Constant.GATEWAY_TYPE_VALUE_SW)
+                   {
+                        if(this.state.gateways.length !== 0)
+                            {
+                              console.log('timer value on sensor provision',global.timerValue);
+                              clearInterval(global.timerValue);
+                              global.timerValue = null;
+                               if(this.pirCharSubscription)
+                                this.pirCharSubscription.remove();
+                               if(this.co2CharSubscription)
+                                this.co2CharSubscription.remove();
+                               if(this.humidityCharSubscription)
+                                this.humidityCharSubscription.remove();
+                               if(this.temperatureCharSubscription)
+                                this.temperatureCharSubscription.remove();
+
+                               this.props.bleManager.destroy();
+                               this.props.onSetBleManager(new BleManager());
+
+                               this.showSoftwareSensorDiscoveryModal(true,false,true,false);
+                        }
+                        else
+                        {
+                           alert("Gateway has not been Provisioned. Please provisioned it");
+                        }
+                   }
+                   else
+                   {
                     if(this.state.gateways.length !== 0)
+
                     {
                         this.showDeviceDiscoveryModal(true, false, true, false)
                     if (this.provisionCallbackCharSubscription) {
@@ -1938,14 +2672,21 @@ async updateSensorName (value,device)
                     {
                        alert("Gateway has not been Provisioned. Please provisioned it");
                     }
-                    }}>
+                    }
+                    }
+                    else
+                    {
+                          alert("Please wait...process is going on");
+                    }
+                    }
+                    }>
                     <Text style={styles.buttonText}>Add New</Text>
 
                     </TouchableOpacity>
 
                 </View>
-                 {devicesList}
-                 <View style={{ height: 10, backgroundColor: '#fff' }}></View>
+                    {devicesList}
+                <View style={{ height: 10, backgroundColor: '#fff' }}></View>
                </View>
                <Modal
                  animationType="slide"
@@ -1960,12 +2701,34 @@ async updateSensorName (value,device)
                            source={require('../../assets/images/add_24.png')}
                           style={styles.modalTitleAddButton}
                      />
-                       <Text> Discover New Sensors </Text>
+                       <Text>Discover New Sensors</Text>
                      </View>
                      {deviceDiscoveryContainer}
                    </View>
                  </View>
                </Modal>
+
+        <Modal
+           animationType="slide"
+           transparent={true}
+           visible={this.state.modalVisibleForSoftwareSensor}
+           onRequestClose={() => {
+           }}
+         >
+           <View style={styles.fullModalContainer}>
+             <View style={styles.modalContainer}>
+               <View style={styles.modalTitle}>
+                 <Image
+                   source={require('../../assets/images/add_24.png')}
+                   style={styles.modalTitleAddButton}
+                 />
+                 <Text>Discover New Sensors</Text>
+               </View>
+               {softwareGatewayDiscoveryContainer}
+             </View>
+           </View>
+         </Modal>
+
       </View>
     );
   }
@@ -2155,7 +2918,19 @@ const styles = StyleSheet.create({
     elevation: 5,
     width: "95%",
     backgroundColor: Constant.WHITE_BACKGROUND_COLOR
-  }
+  },
+    gatewayItem: {
+      width: "100%",
+      flexDirection: "row",
+      alignItems: "center",
+      borderTopWidth: 1,
+      borderBottomWidth: 1,
+      borderColor: Constant.LIGHT_GREY_COLOR,
+    },
+    gatewayListContainer: {
+      flex: 1,
+      justifyContent: "center"
+    }
 });
 
 mapStatesToProps = state => {

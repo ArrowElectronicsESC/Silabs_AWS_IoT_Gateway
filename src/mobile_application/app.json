@@ -5,6 +5,7 @@
   "version": "1.0.23",  
   "selene": "0.0.0",
   "gateway_discovery_name_prefix": "EFR32_gw_",
+  "software_sensor_discovery_name_prefix" : "SENTIMATE_US",
   "allowExceptionsInDevMode": true,
   "production": true,
   "debug": false,

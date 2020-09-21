@@ -88,11 +88,8 @@ class GrowAreas extends Component {
 
   componentDidAppear() {
     this._onRefresh();
-    this.props.bleManager.destroy()
-    this.props.onSetBleManager(new BleManager());
     this.visible = true;
     this.forceUpdate();
-
     AsyncStorage.multiGet(['accessToken', 'APPLE_LOGGED_IN', 'userEmail','email','sensorList','emailNotify','SmsNotify']).then(response => {
       let token = response[0][1];
       let appleKey = response[1][1];
@@ -115,28 +112,8 @@ class GrowAreas extends Component {
     console.log('growARea, disappper', this.state.modalVisible);
     this.visible = false;
     this.setState({ modalVisible: false, registrationModalVisible: false });
-    this.props.bleManager.destroy()
-    this.props.onSetBleManager(new BleManager());
   }
 
-
-
-  // static getDerivedStateFromProps(nextProps, prevState) {
-  //   if (nextProps.selectedContainer) {
-  //     return {
-  //       ...prevState,
-  //       containerId: nextProps.selectedContainer.id,
-  //       facilityId: nextProps.selectedContainer.facilityId
-  //     };
-  //   }
-  //   else if (nextProps.selectedFacility) {
-  //     return {
-  //       ...prevState,
-  //       facilityId: nextProps.selectedFacility.id
-  //     }
-  //   }
-  //   return null;
-  // }
 
   _onRefresh = () => {
     this.setState({ refreshing: true, searching: true, filterKey: '' });
@@ -277,7 +254,11 @@ class GrowAreas extends Component {
             console.log("response in json---"+msg);
             this.props.uiStopLoading();
             this.setGatewayAfterDeletion(this.state.gatewayId);
+            this.props.bleManager.disable()
             alert("Gateway deleted successfully.");
+            console.log('timer value on deletion gateway',global.timerValue);
+            clearInterval(global.timerValue);
+            global.timerValue = null;
           }
           else
           {
@@ -1297,9 +1278,6 @@ async deleteGatewayAPI(payload,device)
 
   onViewDevices(growArea) {
     console.log("enter into device function");
-    this.props.bleManager.destroy()
-    this.props.onSetBleManager(new BleManager());
-
     Navigation.push(this.props.componentId, {
       component: {
         name: 'DevicesScreen',

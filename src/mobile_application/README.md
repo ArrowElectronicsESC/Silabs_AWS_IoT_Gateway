@@ -24,7 +24,7 @@
  - "aws_user_pools_id": "user pool id",
  - "aws_user_pools_web_client_id": "pools web client id",
 
-##### Edit the file 'efr32-gateway/src/mobile_application/src/screens/HistoricalChart.js' on Line 19-20 to change the aws IOT core endpoint details to your AWS IOT core endpoint.
+##### Edit the file 'efr32-gateway/src/mobile_application/src/screens/Dashboard.js,Devices.js,HistoricalChart.js' to change the aws IOT core endpoint details to your AWS IOT core endpoint.
 
  - aws_pubsub_region: 'AWS IOT core endpoint region',
  - aws_pubsub_endpoint: 'wss://<AWS IOT core endpoint>/mqtt',

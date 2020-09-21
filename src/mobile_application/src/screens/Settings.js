@@ -4,6 +4,7 @@ import {
   Platform, AsyncStorage,Image,TouchableOpacity,Button,Alert
 } from 'react-native';
 import { connect } from 'react-redux';
+import { BleManager } from 'react-native-ble-plx';
 import Slide from './SlideComponent';
 import * as Constant from '../Constant';
 import { Navigation } from 'react-native-navigation';
@@ -27,6 +28,10 @@ class Settings extends Component {
   constructor(props) {
     super(props);
     Navigation.events().bindComponent(this);
+    if (!this.props.bleManager) {
+      console.log("BLE manager created on setting page");
+      this.props.onSetBleManager(new BleManager());
+    }
     this.eventSubscription = Navigation.events().registerNavigationButtonPressedListener(this.MenuIconPrressed);
     this.state = {
         token: '',
@@ -68,6 +73,10 @@ class Settings extends Component {
 
   signOut = async () => {
       await Auth.signOut()
+      console.log('timer value on logout',global.timerValue);
+      clearInterval(global.timerValue);
+      global.timerValue = null;
+      this.props.bleManager.disable()
       AsyncStorage.multiRemove(['accessToken','listGateway','sensorList']).then(()=> {
           console.log('successfully logged out');
         }).catch((error) => {
@@ -538,7 +547,8 @@ const styles = StyleSheet.create({
 mapStatesToProps = state => {
   return {
     isLoading: state.ui.isLoading,
-    isMessage: state.ui.isMessage
+    isMessage: state.ui.isMessage,
+    bleManager: state.ble.bleManager
   }
 };
 
@@ -547,7 +557,8 @@ mapDispatchToProps = dispatch => {
 
   return {
     uiStartLoading : (message) => dispatch(uiStartLoading(message)),
-    uiStopLoading : () => dispatch(uiStopLoading())
+    uiStopLoading : () => dispatch(uiStopLoading()),
+    onSetBleManager: (bleManager) => dispatch(setBleManager(bleManager))
   }
 };
 

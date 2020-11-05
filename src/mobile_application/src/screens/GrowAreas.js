@@ -19,13 +19,16 @@ import RNAndroidLocationEnabler from 'react-native-android-location-enabler';
 import { setBleManager } from '../store/actions/bleActions';
 import Base64 from './../utils/Base64';
 import { SearchBar } from 'react-native-elements';
-import Icon from 'react-native-vector-icons/MaterialIcons';
+// import Icon from 'react-native-vector-icons/MaterialIcons';
 import MultiSelect from 'react-native-multiple-select';
 import { Navigation } from 'react-native-navigation';
-import MaterialIcon from 'react-native-vector-icons/MaterialIcons';
+// import MaterialIcon from 'react-native-vector-icons/MaterialIcons';
+import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons";
+import Entypo from 'react-native-vector-icons/Entypo';
 import { RFPercentage, RFValue } from "react-native-responsive-fontsize";
 import RadioForm, { RadioButton, RadioButtonInput, RadioButtonLabel } from 'react-native-simple-radio-button';
 import DeviceInfo from 'react-native-device-info';
+import analytics from '@react-native-firebase/analytics';
 const { width, height } = Dimensions.get('window');
 
 var radio_props = [
@@ -52,6 +55,7 @@ class GrowAreas extends Component {
   loading=false;
   isVisible=false;
   devicemacAddress = null;
+  textTimeout = 100;
 
   constructor(props) {
     super(props);
@@ -87,9 +91,19 @@ class GrowAreas extends Component {
   }
 
   componentDidAppear() {
+    /*
+    ================================================================
+                  Uncomment to use analytics of firebase 
+    ================================================================
+    analytics().logEvent('growareas_screen', {
+      description: '',
+      number: '95',
+    })
+    */
     this._onRefresh();
     this.visible = true;
     this.forceUpdate();
+    
     AsyncStorage.multiGet(['accessToken', 'APPLE_LOGGED_IN', 'userEmail','email','sensorList','emailNotify','SmsNotify']).then(response => {
       let token = response[0][1];
       let appleKey = response[1][1];
@@ -161,15 +175,21 @@ class GrowAreas extends Component {
 
   async gatewayProvisionProcess() {
     this.setRedioModalVisible(false)
-    console.log(this.state.selectedRedioValue);
+    console.log("=====>>gateway provision process started<<=====");
+    console.log("selected radio value:",this.state.selectedRedioValue);
     if (this.state.selectedRedioValue === 1) {
       this.setState({ swGatewayModelVisible: true })
     } else {
-      this.props.bleManager.destroy()
-      this.props.onSetBleManager(new BleManager());
-      this.props.bleManager.disable()
-      setTimeout(() => { this.props.bleManager.enable() }, 1000);
-      setTimeout(() => { this.showGatewayDiscoveryModal(true) }, 2000);
+      if (Platform.OS === 'ios') {
+        this.showGatewayDiscoveryModal(true)
+      }
+      else {
+        this.props.bleManager.destroy()
+        this.props.onSetBleManager(new BleManager());
+        this.props.bleManager.disable()
+        setTimeout(() => { this.props.bleManager.enable() }, 1000);
+        setTimeout(() => { this.showGatewayDiscoveryModal(true) }, 2000);
+      }
       console.log('already provisioned gateways', this.props.alreadyProvisionedGateway.length);
       this.alreadyRegistredGateways = await this.alreadyRegistredGateway(this.state.gateways);
       this.setState({ discoveredGateways: {}, waitingForGatewayLoader: true, bleMessage: '', bleError: '' })
@@ -178,30 +198,64 @@ class GrowAreas extends Component {
 
   swGatewayRegisterSubmitClickHandler = () => {
     this.setState({ swGatewayModelVisible: false })
-    DeviceInfo.getMacAddress().then(mac => {
-      this.devicemacAddress = mac
-      console.log(mac);
-    });
-    setTimeout(() => {
+    if (Platform.OS === 'ios') {
+      var deviceUniqueID = ""
+      let uniqueId = DeviceInfo.getUniqueId();
+      console.log("Unique ID:===>>",uniqueId);
+      deviceUniqueID = uniqueId.slice(-12)
+      var parts = deviceUniqueID.match(/.{1,2}/g);
+      deviceUniqueID = parts.join(":");
+      this.devicemacAddress = deviceUniqueID
+      console.log("Unique MAC Address:===>> ",deviceUniqueID);
+    }
+    else {
+      DeviceInfo.getMacAddress().then(mac => {
+        this.devicemacAddress = mac
+        console.log(mac);
+      });
+    }
+    if (Platform.OS === 'ios') {
       let payloadnew = {}
-      let regEx = /^[a-zA-Z][a-zA-Z_.-]{0,1}[ a-z|A-Z|0-9|_.:-]*$/;
-      if (this.state.gatewayName.trim() !== '' && this.state.gatewayName.length <= 30 && regEx.test(this.state.gatewayName.trim())) payloadnew.name = this.state.gatewayName.trim();
-      else { Alert.alert("Invalid Gateway name.", "Invalid Gateway name! Maximum length is 30. Name should start with alphabet and may contain dot, underscore, space and numeric value."); return; }
-      if ((this.state.gatewayDescription != undefined) && (this.state.gatewayDescription.trim().length <= 200)) payloadnew.description = this.state.gatewayDescription;
-      else { alert("Please provide valid gateway description. (Maximum length 200)"); return; }
-      let payload = [
-        {
-          gatewayName: this.state.gatewayName,
-          macAddress: this.devicemacAddress,
-          userId: JSON.parse(this.state.email),
-          deviceType: "gateway",
-          gatewayType: "SW",
-          description: this.state.gatewayDescription
-        }
-      ];
-      this.provisionSwGatewayApi(payload);
-    }, 1000);
-
+        console.log("Gateway Name:===>>",this.state.gatewayName);
+        let regEx = /^[a-zA-Z][a-zA-Z_.-]{0,1}[ a-z|A-Z|0-9|_.:-]*$/;
+        if (this.state.gatewayName.trim() !== '' && this.state.gatewayName.length <= 30 && regEx.test(this.state.gatewayName.trim())) payloadnew.name = this.state.gatewayName.trim();
+        else { Alert.alert("Invalid Gateway name.", "Invalid Gateway name! Maximum length is 30. Name should start with alphabet and may contain dot, underscore, space and numeric value."); return; }
+        if ((this.state.gatewayDescription != undefined) && (this.state.gatewayDescription.trim().length <= 200)) payloadnew.description = this.state.gatewayDescription;
+        else { alert("Please provide valid gateway description. (Maximum length 200)"); return; }
+        let payload = [
+          {
+            gatewayName: this.state.gatewayName,
+            macAddress: this.devicemacAddress,
+            userId: JSON.parse(this.state.email),
+            deviceType: "gateway",
+            gatewayType: "SW",
+            description: this.state.gatewayDescription
+          }
+        ];
+        this.provisionSwGatewayApi(payload);
+    }
+    else {
+      setTimeout(() => {
+        let payloadnew = {}
+        console.log("Gateway Name:===>>",this.state.gatewayName);
+        let regEx = /^[a-zA-Z][a-zA-Z_.-]{0,1}[ a-z|A-Z|0-9|_.:-]*$/;
+        if (this.state.gatewayName.trim() !== '' && this.state.gatewayName.length <= 30 && regEx.test(this.state.gatewayName.trim())) payloadnew.name = this.state.gatewayName.trim();
+        else { Alert.alert("Invalid Gateway name.", "Invalid Gateway name! Maximum length is 30. Name should start with alphabet and may contain dot, underscore, space and numeric value."); return; }
+        if ((this.state.gatewayDescription != undefined) && (this.state.gatewayDescription.trim().length <= 200)) payloadnew.description = this.state.gatewayDescription;
+        else { alert("Please provide valid gateway description. (Maximum length 200)"); return; }
+        let payload = [
+          {
+            gatewayName: this.state.gatewayName,
+            macAddress: this.devicemacAddress,
+            userId: JSON.parse(this.state.email),
+            deviceType: "gateway",
+            gatewayType: "SW",
+            description: this.state.gatewayDescription
+          }
+        ];
+        this.provisionSwGatewayApi(payload);
+      }, 1000);
+    }
   }
 
   async provisionSwGatewayApi(payload) {
@@ -254,7 +308,12 @@ class GrowAreas extends Component {
             console.log("response in json---"+msg);
             this.props.uiStopLoading();
             this.setGatewayAfterDeletion(this.state.gatewayId);
-            this.props.bleManager.disable()
+            if (Platform.OS === 'android') {
+              this.props.bleManager.disable()
+            }
+            else {
+              this.props.bleManager.destroy()
+            }
             alert("Gateway deleted successfully.");
             console.log('timer value on deletion gateway',global.timerValue);
             clearInterval(global.timerValue);
@@ -273,39 +332,66 @@ class GrowAreas extends Component {
 
   }
   showGatewayDiscoveryModal(visible) {
+    console.log("=====>> show gateway discovery modal <<=====");
     if (this.props.registrationState === RegistrationStates.REGISTRATION_PROCESS_COMPLETE) {
+      console.log("gateway registration process complete");
       this.props.onUpdateRegistrationState(RegistrationStates.REGISTRATION_NOT_STARTED);
       this.setRegistrationModalVisible(false);
       this.setState({
         discoveredGateways: {}
       });
     }
+    else {
+      console.log("gateway registration process not complete");
+    }
 
     if (visible) {
+      console.log("list modal visible");
       this.gatewayCharacteristics = {};
       const subscription = this.props.bleManager.onStateChange((state) => {
         if (state === 'PoweredOn') {
-          this.props.bleManager.destroy()
-          this.props.onSetBleManager(new BleManager());
-          setTimeout(() => {
+          console.log("=====>>BLE is in powered on state<<=====",this.state.isGotAlreadyRegistredGateway);
+          if (Platform.OS === 'ios') {
             if (this.state.isGotAlreadyRegistredGateway) {
+              console.log("Scanning for already registered gateway..")
               this.scanAndConnect();
               this.setState({ modalVisible: true, showCancelButton: true });
               subscription.remove();
             } else {
+              console.log("no registered gateway found");
               this.setState({ modalVisible: false, showCancelButton: false });
             }
-          }, 1000)
+          }
+          else {
+            this.props.bleManager.destroy()
+            this.props.onSetBleManager(new BleManager());
+            setTimeout(() => {
+              if (this.state.isGotAlreadyRegistredGateway) {
+                console.log("Scanning for already registered gateway..")
+                this.scanAndConnect();
+                this.setState({ modalVisible: true, showCancelButton: true });
+                subscription.remove();
+              } else {
+                console.log("no registered gateway found");
+                this.setState({ modalVisible: false, showCancelButton: false });
+              }
+            }, 1000)
+          }
         }
         else if (state === 'PoweredOff') {
           console.log("Ble in power off state");
-          this.props.bleManager.enable()
+          if (Platform.OS === 'ios') {
+            alert("Please turn on the bluetooth");
+          }
+          else {
+            this.props.bleManager.enable()
+          }
           setTimeout(()=>{this.showGatewayDiscoveryModal(true)},1000);
         }
       }, true);
     }
-
     else {
+      console.log("list modal not visible");
       this.setState({
         modalVisible: visible,
         discoveredGateways: {}
@@ -320,9 +406,7 @@ class GrowAreas extends Component {
       this.gatewayCharacteristics = {};
       const subscription = this.props.bleManager.onStateChange((state) => {
         if (state === 'PoweredOn') {
-          this.props.bleManager.destroy()
-          this.props.onSetBleManager(new BleManager());
-          setTimeout(() => {
+          if (Platform.OS === 'ios') {
             if (this.state.isGotAlreadyRegistredGateway) {
               this.scanAndConnectForDeleteGateway()
                 this.setState({ modalVisible: false, showCancelButton: false });
@@ -330,11 +414,26 @@ class GrowAreas extends Component {
             } else {
               this.setState({ modalVisible: false, showCancelButton: false });
             }
-          }, 1000)
+          }
+          else {
+            this.props.bleManager.destroy()
+            this.props.onSetBleManager(new BleManager());
+            setTimeout(() => {
+              if (this.state.isGotAlreadyRegistredGateway) {
+                this.scanAndConnectForDeleteGateway()
+                  this.setState({ modalVisible: false, showCancelButton: false });
+                  subscription.remove();
+              } else {
+                this.setState({ modalVisible: false, showCancelButton: false });
+              }
+            }, 1000)
+          }
         }
         else if (state === 'PoweredOff') {
           this.props.uiStopLoading();
-          this.props.bleManager.enable()
+          if (Platform.OS === 'android') {
+            this.props.bleManager.enable()
+          }
           setTimeout(()=>{this.showGatewayDiscoveryModalForDeleteGateway(true)},1000);
         }
       }, true);
@@ -344,7 +443,7 @@ class GrowAreas extends Component {
   }
 
   gatewayRegisterClickHandler = (bleGateway) => {
-    console.log('register called', bleGateway);
+    console.log('gateway register called', bleGateway);
     this.bleDevice = bleGateway;
     this.props.bleManager.stopDeviceScan();
     this.props.onUpdateRegistrationState(RegistrationStates.REGISTRATION_NOT_STARTED);
@@ -363,7 +462,8 @@ class GrowAreas extends Component {
       console.log("gatewayMacId set");
     }
     else {
-      let macId = bleGateway.name.split('_').slice(-1).pop();
+      let macId = bleGateway.name.split(gateway_discovery_name_prefix).pop();
+      console.log("BLE MAC Address:====>>",macId);
       this.setState({
         gatewayName: bleGateway.name,
         gatewayUId: bleGateway.id,
@@ -372,8 +472,9 @@ class GrowAreas extends Component {
         registrationModalVisible: true,
         bleMessage: 'Connecting to device..',
         bleError: '',
-        gatewayMacId: bleGateway.name,
-        waitingForGatewayLoader: false
+        gatewayMacId: macId,
+        waitingForGatewayLoader: false,
+        modalVisible: false
       })
     }
     this.connectAndDiscoverCharacteristics(bleGateway);
@@ -433,7 +534,9 @@ class GrowAreas extends Component {
   }
 
   setRegistrationModalVisible(visible, disconnectDeivce) {
+    console.log("registration modal started");
     if (visible) {
+      console.log("registration modal visible");
       this.setState({
         registrationModalVisible: true,
         bleMessage: '',
@@ -447,6 +550,7 @@ class GrowAreas extends Component {
 
     }
     else {
+      console.log("registration modal not visible");
       if (this.state.facilityPicked) {
         this.setState({
           registrationModalVisible: false,
@@ -462,46 +566,63 @@ class GrowAreas extends Component {
         });
       }
       if (this.bleDevice && disconnectDeivce) {
-        try {
-          this.bleDevice.isConnected().then((isDeviceConnected) => {
-            console.log('isDeviceConnected in groearea', isDeviceConnected);
-            if (isDeviceConnected) {
-              this.bleDevice.cancelConnection().then(() => {
-                console.log('successfully disconnected in Growrea');
-              }).catch((error) => {
-                console.log(' error in disconnecting BLE from sign out Growarea', error);
-              })
-            } else {
-              console.log('gateway is not connected!!');
-            }
-          }).catch((error) => {
-            console.log(' error in getting state of ble-device in Growarea ', error);
-          })
+        console.log("Platform:======>>",Platform.OS);
+        if (Platform.OS === 'ios') {
           this.setState({
             registrationModalVisible: false,
           });
-        } catch (error) {
-          console.log(' error in try catch block ', error);
-
         }
-
+        else {
+          try {
+            this.bleDevice.isConnected().then((isDeviceConnected) => {
+              console.log('isDeviceConnected in groearea', isDeviceConnected);
+              if (isDeviceConnected) {
+                this.bleDevice.cancelConnection().then(() => {
+                  console.log('successfully disconnected in Growrea');
+                }).catch((error) => {
+                  console.log(' error in disconnecting BLE from sign out Growarea', error);
+                })
+              } else {
+                console.log('gateway is not connected!!');
+              }
+            }).catch((error) => {
+              console.log(' error in getting state of ble-device in Growarea ', error);
+            })
+            this.setState({
+              registrationModalVisible: false,
+            });
+          } catch (error) {
+            console.log(' error in try catch block ', error);
+  
+          }
+        }
       }
     }
   }
 
   scanAndConnect() {
     let discoveredGateways = {}
-    console.log("Scanning devices:");
+    console.log("=====>>Scan and connect<<=====");
+    /*
+    ================================================================
+                  Uncomment to use analytics of firebase 
+    ================================================================
+    analytics().logEvent('scanAndConnect', {
+      description: 'Scanning devices',
+      number: '598',
+    })
+    */
     if (this.props.bleManager) {
       console.log("Scanning devices:1");
       this.props.bleManager.startDeviceScan(null, null, (error, device) => {
         if (error) {
+          console.log("error while scanning");
           console.log("Scanning devices:" + 2);
           this.setState({ modalVisible: false });
           if (error.errorCode === 101) {
             //Device is not authorized to use BluetoothLE
             if (Platform.OS === 'ios') {
-              alert(appName + ' app wants to use location services.. please provide access.')
+              alert(appName + ' app wants to use bluetooth services.. please provide access.')
             }
             else {
               Promise.resolve(requestLocationPermission())
@@ -511,6 +632,12 @@ class GrowAreas extends Component {
                 }).catch(error => {
                   alert(error);
                 });
+            }
+          }
+          else if (error.errorCode === 102) {
+            //BluetoothLE is powered off
+            if (Platform.OS === 'ios') {
+              alert('Please enable the Bluetooth to get connected with the nearby devices.')
             }
           }
           else if (error.errorCode === 601) {
@@ -535,15 +662,53 @@ class GrowAreas extends Component {
           }
           return;
         }
-        console.log("Scanning devices:3 chnage", device.name);
-        if (device.name && device.name.startsWith(gateway_discovery_name_prefix) && device.name && !(this.alreadyRegistredGateways.includes(device.id))) {
-          let preLength = Object.keys(discoveredGateways).length;
-          discoveredGateways[device.id] = device;
-          let latestLength = Object.keys(discoveredGateways).length;
-          if (preLength < latestLength) {
+        else {
+          console.log("Scanning devices:3 change", device.name);
+          if (device.name && device.name.startsWith(gateway_discovery_name_prefix) && device.name && !(this.alreadyRegistredGateways.includes(device.id))) {
+            console.log("=====>> Scanned successfully <<=====");
+            /*
+            ================================================================
+                      Uncomment to use analytics of firebase 
+            ================================================================
+            analytics().logEvent('scanAndConnect', {
+              description: 'Scanned successfully',
+              number: '664',
+              id: device.id,
+              name: device.name,
+            })
+            */
+            console.log("Device ID:====>>",device.id);
+            console.log("=====>> Known BLE device found <<=====");
+            console.log("BLE MAC Address:====>>",device.name.split(gateway_discovery_name_prefix).pop());
+            let preLength = Object.keys(discoveredGateways).length;
+            discoveredGateways[device.id] = device;
+            let latestLength = Object.keys(discoveredGateways).length;
+            if (preLength < latestLength) {
             console.log("Name:" + device.name + "\nMac address:" + device.id);
             this.setState({ discoveredGateways: discoveredGateways })
             console.log('device found so stop interval and scanning');
+            /*
+            ================================================================
+                      Uncomment to use analytics of firebase 
+            ================================================================
+            analytics().logEvent('scanAndConnect', {
+              description: 'device found so stop interval and scanning',
+              number: '680',
+            })
+            */
+            }
+          }
+          else {
+            console.log("No known BLE devices found");
+            /*
+            ================================================================
+                      Uncomment to use analytics of firebase 
+            ================================================================
+            analytics().logEvent('scanAndConnect', {
+              description: 'No known BLE devices found',
+              number: '688',
+            })
+            */
           }
         }
       });
@@ -554,7 +719,16 @@ class GrowAreas extends Component {
     let timerStartedCount=0;
     let discoveredGateways = {}
     payload= await this.createGatewayDeletionPayload();
-    console.log("Scanning devices:");
+    console.log("=====>>Scan and connect for delete gateway<<=====");
+    /*
+    ================================================================
+              Uncomment to use analytics of firebase 
+    ================================================================
+    analytics().logEvent('scanAndConnectForDeleteGateway', {
+      description: 'Scan and connect for delete gateway',
+      number: '703',
+    })
+    */
     if (this.props.bleManager) {
       console.log("Scanning devices:1");
       if(timerStartedCount==0){
@@ -613,7 +787,7 @@ class GrowAreas extends Component {
             //Device is not authorized to use BluetoothLE
             if (Platform.OS === 'ios') {
               this.props.uiStopLoading();
-              alert(appName + ' app wants to use location services.. please provide access.')
+              alert(appName + ' app wants to use bluetooth services.. please provide access.')
             }
             else {
               Promise.resolve(requestLocationPermission())
@@ -625,6 +799,12 @@ class GrowAreas extends Component {
                   this.props.uiStopLoading();
                   alert(error);
                 });
+            }
+          }
+          else if (error.errorCode === 102) {
+            //BluetoothLE is powered off
+            if (Platform.OS === 'ios') {
+              alert('Please enable the Bluetooth to get connected with the nearby devices.')
             }
           }
           else if (error.errorCode === 601) {
@@ -653,26 +833,35 @@ class GrowAreas extends Component {
           }
           return;
         }
-        console.log("Scanning devices:3 chnage", device.name);
-        console.log("Scanning devices:3 chnage", device.id);
-        console.log("already discovered devices--"+this.alreadyRegistredGateways);
-        console.log("selected gateway--"+this.state.selectedGateway);
-        if (device.name && device.name.startsWith(gateway_discovery_name_prefix) && device.name && (this.state.selectedGateway === device.id)) {
-          let preLength = Object.keys(discoveredGateways).length;
-          discoveredGateways[device.id] = device;
-          let latestLength = Object.keys(discoveredGateways).length;
-          if (preLength < latestLength) {
-            console.log("Name:" + device.name + "\nMac address:" + device.id);
-            this.setState({ discoveredGateways: discoveredGateways })
-            this.props.bleManager.stopDeviceScan();
-            clearTimeout(this.timeoutValue);
-            console.log('device found so stop timeout and scanning');
-            this.props.uiStopLoading();
-            this.deleteGatewayAPI(payload,device);
-
+        else {
+          console.log("Scanning device name :", device.name);
+          console.log("Scanning device id :", device.id);
+          console.log("already discovered devices--"+this.alreadyRegistredGateways);
+          console.log("selected gateway--"+this.state.selectedGateway);
+          let deviceID = ""
+          if (Platform.OS === 'ios') {
+            deviceID = device.name.split(gateway_discovery_name_prefix).pop();
+            console.log("Scanning Gateway Mac ID : ====>",deviceID);
           }
-        }  
-            
+          else {
+            deviceID = device.id
+          }
+          if (device.name && device.name.startsWith(gateway_discovery_name_prefix) && device.name && (this.state.selectedGateway === deviceID)) {
+            console.log("Gateway Device found");
+            let preLength = Object.keys(discoveredGateways).length;
+            discoveredGateways[deviceID] = device;
+            let latestLength = Object.keys(discoveredGateways).length;
+            if (preLength < latestLength) {
+              console.log("Name:" + device.name + "\nMac address:" + deviceID);
+              this.setState({ discoveredGateways: discoveredGateways })
+              this.props.bleManager.stopDeviceScan();
+              clearTimeout(this.timeoutValue);
+              console.log('device found so stop timeout and scanning');
+              this.props.uiStopLoading();
+              this.deleteGatewayAPI(payload,device);
+            }
+          } 
+        }    
       });
     }
   }
@@ -805,7 +994,7 @@ async deleteGatewayAPI(payload,device)
   }
 
   gatewayRegisterClickHandlerForDeleteGateway = (bleGateway) => {
-    console.log('register called in register delete click handler', bleGateway);
+    console.log('register called in register delete click handler');
     this.bleDevice = bleGateway;
     if (Platform.OS === 'android') {
       this.setState({
@@ -962,9 +1151,11 @@ async deleteGatewayAPI(payload,device)
 
 
   connectAndDiscoverCharacteristics(device) {
+    console.log("=====>> connect and discover characteristics <<=====");
     this.errorCode = 0;
     device.connect()
       .then((device) => {
+        console.log("connecting to device");
         this.errorCode = 1;
         this.props.onSignoutDisconnectFromGrowarea(device);
         this.setState({
@@ -1140,6 +1331,7 @@ async deleteGatewayAPI(payload,device)
 
       if (error) {
         console.log("Error:" + error.message + "\nErrorCode:" + error.errorCode + '\nDiscoverGatewayProvisionCallbackNotificationSubscription');
+        this.props.onUpdateRegistrationState(RegistrationStates.REGISTRATION_FAILED);
         if (this.state.errorCode === 1) {
           console.log("Error:" + error.message + "\nErrorCode:" + error.errorCode + '\nDiscoverGatewayProvisionCallbackNotificationSubscription');
         } else {
@@ -1172,11 +1364,16 @@ async deleteGatewayAPI(payload,device)
                 AsyncStorage.setItem('emailNotify',"true");
                 AsyncStorage.setItem('SmsNotify',"false");
                 alert(payload['statusMessage']);
-                this.disconnectBleConnection();
+                // if (Platform.OS === 'android') {
+                  this.disconnectBleConnection();
+                // }
               }else
               {
                     alert(payload['statusMessage']);
-                    this.disconnectBleConnection();
+                    this.props.onUpdateRegistrationState(RegistrationStates.REGISTRATION_FAILED_TO_INTERNAL_CLOUD);
+                    // if (Platform.OS === 'android') {
+                      this.disconnectBleConnection();
+                    // }
               }
             }
             else {
@@ -1297,12 +1494,15 @@ async deleteGatewayAPI(payload,device)
                  color: Constant.RED_COLOR,
               },
               backButton: {
+                title: 'Previous',
                  color: '#fff',
+                 showTitle: true,
               // icon:require('../../assets/images/back.png')
               },
               title: {
-                 text: "Previous",
+                //  text: "Previous",
                  color: '#fff',
+                 visible: Platform.OS === 'android',
               }
           }
         }
@@ -1336,12 +1536,15 @@ async deleteGatewayAPI(payload,device)
                    color: Constant.RED_COLOR,
                 },
                 backButton: {
+                  title: 'Previous',
                   color: '#fff',
+                  showTitle: true,
                  // icon:require('../../assets/images/back.png')
                 },
                 title: {
-                  text: "Previous",
+                  // text: "Previous",
                   color: '#fff',
+                  visible: Platform.OS === 'android',
                 }
               }
             }
@@ -1407,6 +1610,15 @@ async deleteGatewayAPI(payload,device)
 
       this.isVisible = !this.isVisible;
 
+  }
+
+  checkGatewayProvisionStatus() {
+    if(this.state.gateways.length == 0) {
+      this.setState({ redioModelVisible: true })
+    }
+    else {
+      alert("Only one Gateway can be provisioned under a user account. Please try to add a new gateway after deleting the old gateway.");
+    }
   }
 
   async updateGatewayName (value,device)
@@ -1509,11 +1721,11 @@ async deleteGatewayAPI(payload,device)
             </View>
             <TouchableOpacity style={{ flex: 1, height: 35 }} onPress={() => { }} />
             <View style={{ flexDirection: 'row' }}>
-              <MaterialIcon name="edit" size={24} style={{ padding: (0, 0, 0, 5), color: '#fff',backgroundColor: Constant.BLUE_COLOR }} color={Constant.WHITE_TEXT_COLOR} onPress={() => {
+              <Entypo name="edit" size={24} style={{ padding: (0, 0, 0, 5), color: '#fff',backgroundColor: Constant.BLUE_COLOR }} color={Constant.WHITE_TEXT_COLOR} onPress={() => {
               this.setState({editedItem:item});
               this.setVisibilityOfModal();
               }} />
-              <MaterialIcon name="delete"  size={24} style={{ padding: (0, 0, 0, 5), color: '#fff',marginLeft: '5%',backgroundColor: Constant.BLUE_COLOR }} color={Constant.WHITE_TEXT_COLOR} onPress={() => {
+              <MaterialCommunityIcons name="delete"  size={24} style={{ padding: (0, 0, 0, 5), color: '#fff',marginLeft: '5%',backgroundColor: Constant.BLUE_COLOR }} color={Constant.WHITE_TEXT_COLOR} onPress={() => {
                   Alert.alert('Delete gateway', 'Are you sure you want to delete ' + item.gatewayName + '?'+' All the sensor provision with this gateway will also get deleted',
                     [
                       {
@@ -1529,12 +1741,17 @@ async deleteGatewayAPI(payload,device)
                           {
                             this.deletionSwGatewayApi();
                           }else{
-                          this.props.bleManager.destroy()
-                          this.props.onSetBleManager(new BleManager());
                           this.alreadyRegistredGateways = await this.alreadyRegistredGateway(this.state.gateways);
-                          this.props.bleManager.disable()
-                          setTimeout(()=>{this.props.bleManager.enable() },1000);
-                          setTimeout(()=>{this.showGatewayDiscoveryModalForDeleteGateway(true)},2000);
+                          if (Platform.OS === 'ios') {
+                            this.showGatewayDiscoveryModalForDeleteGateway(true)
+                          }
+                          else {
+                            this.props.bleManager.destroy()
+                            this.props.onSetBleManager(new BleManager());
+                            this.props.bleManager.disable()
+                            setTimeout(()=>{this.props.bleManager.enable() },1000);
+                            setTimeout(()=>{this.showGatewayDiscoveryModalForDeleteGateway(true)},2000);
+                          }
                           }
                         }
                       },
@@ -1560,7 +1777,7 @@ async deleteGatewayAPI(payload,device)
                         secureTextEntry={false}
                         buttonsStyle={{ borderColor: 'white' }}
                         textCancelStyle={{ color: 'white',fontSize: RFPercentage(2.5) }}
-                       submitTextStyle={{ color: 'white', fontStyle: 'bold' ,fontSize: RFPercentage(2.5)}}
+                       submitTextStyle={{ color: 'white', fontWeight: 'bold' ,fontSize: RFPercentage(2.5)}}
                        cancelButtonText="CANCEL"
                        submitButtonText="RENAME"
                />
@@ -1678,7 +1895,7 @@ async deleteGatewayAPI(payload,device)
       <ScrollView>
         <Text style={{ fontWeight: "bold", fontSize: 20, padding: 10, borderBottomWidth: 1 }}> Register Gateway </Text>
         <ScrollView contentContainerStyle={styles.inputContainer}>
-          
+
           <TextField label='Gateway Name' onChangeText={(gatewayName) => this.setState({ gatewayName })} value={this.state.gatewayName} labelHeight={18} />
           <TextField label='Description' onChangeText={(gatewayDescription) => this.setState({ gatewayDescription })} value={this.state.gatewayDescription} labelHeight={18} />
         </ScrollView>
@@ -1722,7 +1939,7 @@ async deleteGatewayAPI(payload,device)
         let payload = [
             {
             gatewayName: this.state.gatewayName,
-            macAddress: this.state.gatewayUId,
+            macAddress: this.state.gatewayMacId,
             userId: JSON.parse(this.state.email) ,
             deviceType: "gateway",
             description:this.state.gatewayDescription
@@ -1791,7 +2008,8 @@ async deleteGatewayAPI(payload,device)
           <View style={styles.titleContainer}>
             <View style={{width:'100%' ,flexDirection:'row',alignItems:'flex-end',alignContent:'flex-end',alignSelf:'flex-end',justifyContent:'flex-end'}}>
             <TouchableOpacity style={[styles.roundButton, styles.addNewButton]} onPress={async () => {
-              this.setState({ redioModelVisible: true })
+              // this.setState({ redioModelVisible: true })
+              this.checkGatewayProvisionStatus();
             }
             }>
             <Text style={styles.buttonText}>Add New</Text>

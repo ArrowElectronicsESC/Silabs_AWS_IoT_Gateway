@@ -89,7 +89,9 @@ export const DEFAULT_NAVIGATOR_STYLE = {
       color: NAVIGATION_BACK_COLOR,
     },
     backButton: {
+      title: 'Previous',
       color: '#fff',
+      showTitle: true,
     },
     title: {
       color: '#fff',

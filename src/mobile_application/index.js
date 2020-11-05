@@ -1,7 +1,8 @@
 import App from './App';
-import { Navigation } from "react-native-navigation";
+import {name as appName} from './app.json';
+import { Navigation } from "react-native-navigation"
 
-console.disableYellowBox = true;
+Navigation.registerComponent(appName, () => App);
 Navigation.events().registerAppLaunchedListener(() => {
     App();
 });

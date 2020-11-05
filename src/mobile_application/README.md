@@ -39,7 +39,7 @@
 
 1. Fill needed details of userpool in aws-exports.js file.
 
-## Developer build for rapid development using ADB
+## Developer build for rapid development using ADB (Android)
 
 Use below command in mobile_application directory to build the app:
 
@@ -49,7 +49,7 @@ Use below command in mobile_application directory to build the app:
 1. Run `npm start .`
 1. From another terminal, run `react-native run-android` command. This will build and launch the application to the connected Android device over the ADB.
 
-## Generate the standalone apk in debug mode for testing
+## Generate the standalone apk in debug mode for testing (Android)
 
 1. Add the JS bundles to the android resources
    ```
@@ -61,3 +61,12 @@ Use below command in mobile_application directory to build the app:
    $ ./gradlew clean assembleDebug
    ```
 1. The application shall be generated to the `app/build/outputs/apk/debug/app-debug.apk` directory.
+
+## Developer build for rapid development using Xcode (iOS)
+
+Use below command in mobile_application directory to build the app:
+
+1. After that re-build the app from Xcode build option.
+   >   Product -> Build Project
+1. Run `npm start .`
+1. From another terminal, run `react-native run-ios` command. This will build and launch the application to the connected iOS device or Simulator over the Xcode.

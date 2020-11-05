@@ -120,10 +120,11 @@ class Login extends React.Component {
 
 async componentDidMount() {
     const userInfo = await Auth.currentAuthenticatedUser();
-
+    const currentUser = await Auth.currentUserCredentials();
     let email=JSON.stringify(userInfo.signInUserSession.idToken.payload.email.trim());
     let phNumber = JSON.stringify(userInfo.signInUserSession.idToken.payload.phone_number);
-    let url = Urls.GET_USER+userInfo.signInUserSession.idToken.payload.email;
+    // let url = Urls.GET_USER+userInfo.signInUserSession.idToken.payload.email;
+    let url = Urls.GET_USER+userInfo.signInUserSession.idToken.payload.email + ';' + currentUser.identityId;
     let gatewaylist=[];
     let sensorlist=[];
 

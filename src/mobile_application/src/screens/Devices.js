@@ -7,7 +7,7 @@ import {
 import  DialogInput  from 'react-native-dialog-input-custom';
 import * as Constant from '../Constant';
 import * as Urls from '../Urls';
-import { displayName as appName, debug, bleDebug, liveChartDebug, deviceDiscoveryTimeout,software_sensor_discovery_name_prefix } from './../../app.json';
+import { displayName as appName, debug, bleDebug, liveChartDebug, deviceDiscoveryTimeout,software_sensor_discovery_name_prefix,gateway_discovery_name_prefix } from './../../app.json';
 import { connect } from 'react-redux';
 import { BleManager } from 'react-native-ble-plx';
 import {
@@ -23,9 +23,13 @@ import Base64 from './../utils/Base64';
 import CheckBox from 'react-native-check-box';
 import { SearchBar } from 'react-native-elements';
 import Icon from 'react-native-vector-icons/FontAwesome';
-import MaterialIcon from 'react-native-vector-icons/MaterialIcons';
+// import MaterialIcon from 'react-native-vector-icons/MaterialIcons';
+import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons";
+import Entypo from 'react-native-vector-icons/Entypo';
 import { Navigation } from 'react-native-navigation';
 import {WebView} from 'react-native-webview';
+import analytics from '@react-native-firebase/analytics';
+import database from '@react-native-firebase/database';
 const {width,height} = Dimensions.get('window');
 
 Amplify.addPluggable(new AWSIoTProvider(
@@ -70,7 +74,19 @@ class Devices extends Component {
       super(props);
       Navigation.events().bindComponent(this);
 
-      if (!this.props.manager) this.props.onSetBleManager(new BleManager());
+      if (!this.props.manager)
+      {
+        console.log("BLE Manager not found on Devices Screen");
+        this.props.bleManager.destroy()
+        this.props.onSetBleManager(new BleManager());
+      }
+      else {
+        console.log("BLE Manager found on Devices Screen");
+        if (Platform.OS === 'ios') {
+          this.props.bleManager.destroy()
+          this.props.onSetBleManager(new BleManager());
+        }
+      }
 
       this.state = {
         token: '',
@@ -91,6 +107,8 @@ class Devices extends Component {
         chartflag: false,
         gatewayforSensor:'',
         editedSensor: '',
+        displayDeviceID: '',
+        userName: '',
       };
 
       if (this.props.selectedGrowArea) { // redirect from grow area
@@ -105,6 +123,21 @@ class Devices extends Component {
       }
 
       componentDidAppear() {
+      /* 
+      ================================================================
+        Uncomment to use analytics and realtime database of firebase 
+      ================================================================
+        database()
+        .ref('/users/Devices')
+        .set({
+          name: 'Component did appear',
+        })
+        .then(() => console.log('Data set for component did appear on devices.'));
+        analytics().logEvent('devices_screen', {
+          description: '',
+          number: '113',
+        })
+        */
         this._onRefresh();
         this.forceUpdate();
         this.visible = true;
@@ -117,7 +150,13 @@ class Devices extends Component {
 
         this.setState({ refreshing: false })
         console.log(JSON.stringify(this.props.deviceTypes));
-
+        /* 
+        ================================================================
+          Uncomment to use realtime database of firebase 
+        ================================================================
+        let uniqueKey = this.getUniqueID(this.state.email);
+        console.log("Unique key:=====>>",uniqueKey);
+        */
          let growAreaId = this.growAreaId;
          })
 
@@ -196,7 +235,9 @@ class Devices extends Component {
                 color: Constant.NAVIGATION_BACK_COLOR,
               },
               backButton: {
+                title: 'Previous',
                 color: '#fff',
+                showTitle: true,
               },
               title: {
                 text: screenName,
@@ -221,23 +262,52 @@ class Devices extends Component {
       console.log('flags', visible, inBackground, keepProvisionCallback, showAlert);
 
       if (visible) {
-        this.props.bleManager.disable()
-        setTimeout(()=>{
-        this.props.bleManager.enable() },1000);
-        setTimeout(()=>{
-        const subscription = this.props.bleManager.onStateChange((state) => {
-          if (state === 'PoweredOn') {
-            if (!inBackground) this.setState({ deviceDiscoveryModalVisible: true, waitingDeviceLoader: true });
-            console.log("Checking for gateway connection")
-            this.checkForGatewayConnection(inBackground);
-            subscription.remove();
-          }
-          else if (state === 'PoweredOff') {
-            this.props.bleManager.enable()
-          }
-        }, true);
-
-        },2000);
+        if (Platform.OS === 'ios') {
+          const subscription = this.props.bleManager.onStateChange((state) => {
+            if (state === 'PoweredOn') {
+              if (!inBackground) this.setState({ deviceDiscoveryModalVisible: true, waitingDeviceLoader: true });
+              console.log("Checking for gateway connection")
+              /*
+              ================================================================
+                Uncomment to use realtime database of firebase 
+              ================================================================
+              let showDiscoveryModalRef = this.getUniqueIDForReference() + 'showDiscoveryModal'
+              console.log("showDiscoveryModalRef with UserName:=====>>",showDiscoveryModalRef);
+              database()
+                .ref(showDiscoveryModalRef)
+                .set({
+                  description: 'Checking for gateway connection',
+                  method: 'showDeviceDiscoveryModal',
+            })
+            .then(() => console.log('Data set for showDiscoveryModal in devices screen'));
+            */
+              this.checkForGatewayConnection(inBackground);
+              subscription.remove();
+            }
+            else if (state === 'PoweredOff') {
+              alert("Please turn on the bluetooth");
+            }
+          }, true);
+        }
+        else {
+          this.props.bleManager.disable()
+          setTimeout(()=>{
+          this.props.bleManager.enable() },1000);
+          setTimeout(()=>{
+          const subscription = this.props.bleManager.onStateChange((state) => {
+            if (state === 'PoweredOn') {
+              if (!inBackground) this.setState({ deviceDiscoveryModalVisible: true, waitingDeviceLoader: true });
+              console.log("Checking for gateway connection")
+              this.checkForGatewayConnection(inBackground);
+              subscription.remove();
+            }
+            else if (state === 'PoweredOff') {
+              this.props.bleManager.enable()
+            }
+          }, true);
+  
+          },2000);
+        }
       }
       else if (showAlert) {
 
@@ -273,26 +343,42 @@ class Devices extends Component {
          console.log('flags', visible, inBackground, keepProvisionCallback, showAlert);
 
          if (visible) {
-
-           this.props.bleManager.disable()
-           setTimeout(()=>{
-           this.props.bleManager.enable() },1000);
-           setTimeout(()=>{
-           const subscription = this.props.bleManager.onStateChange((state) => {
-             if (state === 'PoweredOn') {
-               if (!inBackground) this.setState({ modalVisibleForSoftwareSensor: true,waitingDeviceLoader: true });
-               console.log("Checking for gateway connection")
-
-               this.scanAndConnectForSoftwareSensor(inBackground);
-
-               subscription.remove();
-             }
-             else if (state === 'PoweredOff') {
-               this.props.bleManager.enable()
-             }
-           }, true);
-
-           },2000);
+           if (Platform.OS === 'ios') {
+            const subscription = this.props.bleManager.onStateChange((state) => {
+              if (state === 'PoweredOn') {
+                if (!inBackground) this.setState({ modalVisibleForSoftwareSensor: true,waitingDeviceLoader: true });
+                console.log("Checking for gateway connection in show software sensor discovery modal")
+ 
+                this.scanAndConnectForSoftwareSensor(inBackground);
+ 
+                subscription.remove();
+              }
+              else if (state === 'PoweredOff') {
+                alert("Please turn on the bluetooth");
+              }
+            }, true);
+           }
+           else {
+            this.props.bleManager.disable()
+            setTimeout(()=>{
+            this.props.bleManager.enable() },1000);
+            setTimeout(()=>{
+            const subscription = this.props.bleManager.onStateChange((state) => {
+              if (state === 'PoweredOn') {
+                if (!inBackground) this.setState({ modalVisibleForSoftwareSensor: true,waitingDeviceLoader: true });
+                console.log("Checking for gateway connection")
+ 
+                this.scanAndConnectForSoftwareSensor(inBackground);
+ 
+                subscription.remove();
+              }
+              else if (state === 'PoweredOff') {
+                this.props.bleManager.enable()
+              }
+            }, true);
+ 
+            },2000);
+           }
          }
          else if (showAlert) {
 
@@ -335,9 +421,17 @@ class Devices extends Component {
             console.log("res---"+JSON.stringify(response));
             if(response.ok)
             {
-             const msg = await response.json();
-             console.log("response in json---"+msg);
-             alert("Sensor deleted Successfully.");
+              const msg = await response.json();
+              console.log("response in json---"+msg);
+              alert("Sensor deleted Successfully.");
+              if (Platform.OS === 'ios') {
+                console.log("Disconnecting BLE Connection after sensor deletion process");
+                this.props.bleManager.destroy()
+                this.props.onSetBleManager(new BleManager());
+              }
+              else {
+                this.props.bleManager.destroy()
+              }
              this.setSensorListAfterDeletion(sensorId);
               this.askForService(device,eui64);
             }
@@ -369,7 +463,12 @@ class Devices extends Component {
                 console.log("response in json---"+msg);
                 alert("Sensor deleted Successfully.");
                 this.setSensorListAfterDeletion(sensor.sensorId);
-                this.props.bleManager.disable()
+                if (Platform.OS === 'android') {
+                  this.props.bleManager.disable()
+                }
+                else {
+                  this.props.bleManager.destroy()
+                }
                 setTimeout(() => {
                   if(this.state.sensors.length == 0)
                   {
@@ -409,7 +508,30 @@ class Devices extends Component {
       }
 
         askForService = (device,eui64) => {
+          /*
+          ================================================================
+            Uncomment to use analytics and realtime database of firebase 
+          ================================================================
+          let askForServiceRef = this.getUniqueIDForReference() + 'askForService'
+          console.log("askForServiceRef with UserName:=====>>",askForServiceRef);
+          database()
+            .ref(askForServiceRef)
+            .set({
+              id: device.id,
+              name: device.name,
+              description: 'Discovering services and characteristics...',
+            })
+            .then(() => console.log('Data set for ask for service in devices screen'));
+          analytics().logEvent('ask_for_service', {
+            id: device.id,
+            name: device.name,
+            description: 'Discovering services and characteristics...',
+          })
+          */
+          console.log("Ask for service");
           console.log("Discovering services and characteristics...");
+          console.log("Device Name:=====>>",device.name);
+          console.log("Device ID:=====>>",device.id);
           this.setState({
             deviceDiscoveryModalVisible: false,
             bleMessage: 'Discovering services and characteristics...',
@@ -425,6 +547,22 @@ class Devices extends Component {
                 console.log("Known Services size:" + services.length)
                 if (services.length === 0) {
                   console.log("No known services found in connected device.");
+                  /*
+                  ================================================================
+                    Uncomment to use analytics and realtime database of firebase 
+                  ================================================================
+                  let deviceServicesRef = this.getUniqueIDForReference() + 'deviceServices'
+                  console.log("deviceServicesRef with UserName:=====>>",deviceServicesRef);
+                  database()
+                    .ref(deviceServicesRef)
+                      .set({
+                        description: 'No known services found in connected device.',
+                      })
+                        .then(() => console.log('Data set for deviceServices in devices screen'));
+                  analytics().logEvent('ask_for_service', {
+                    description: 'No known services found in connected device.',
+                  })
+                  */
                   this.setState({
                     bleMessage: 'Required services not found. Disconnecting from device..',
                     waitingDeviceLoader: false
@@ -432,6 +570,22 @@ class Devices extends Component {
                   device.cancelConnection();
                 }
                 else {
+                  /*
+                  ================================================================
+                    Uncomment to use analytics and realtime database of firebase 
+                  ================================================================
+                  let discoverServicesRef = this.getUniqueIDForReference() + 'discoverServices'
+                  console.log("discoverServicesRef with UserName:=====>>",discoverServicesRef);
+                  database()
+                    .ref(discoverServicesRef)
+                      .set({
+                        description: 'Services discovered..',
+                      })
+                        .then(() => console.log('Data set for discoverServices in devices screen'));
+                  analytics().logEvent('ask_for_service', {
+                    description: 'Services discovered..',
+                  })
+                  */
                   this.setState({
                     bleMessage: 'Services discovered..',
                     waitingDeviceLoader: false
@@ -441,11 +595,47 @@ class Devices extends Component {
                   service.characteristics().then(characteristics => {
                     console.log("Service UUID:" + service.uuid);
                     console.log("Initial characteristics size:" + characteristics.length);
+                    /*
+                    ================================================================
+                      Uncomment to use analytics and realtime database of firebase 
+                    ================================================================
+                    let characteristicsServicesRef = this.getUniqueIDForReference() + 'characteristicsServices'
+                    console.log("characteristicsServicesRef with UserName:=====>>",characteristicsServicesRef);
+                    database()
+                    .ref(characteristicsServicesRef)
+                      .set({
+                        description: 'Service UUID',
+                        id: service.uuid,
+                      })
+                        .then(() => console.log('Data set for characteristicsServices in devices screen'));
+                    analytics().logEvent('ask_for_service', {
+                      description: 'Service UUID',
+                      id: service.uuid,
+                    })
+                    */
                     characteristics = characteristics.filter((characteristic) => {
 
                       characteristicPrefix = this.isKnownCharacteristic(characteristic);
                       if (characteristicPrefix) {
                         console.log("Characteristics UUID:" + characteristic.uuid);
+                        /*
+                        ================================================================
+                          Uncomment to use analytics and realtime database of firebase 
+                        ================================================================
+                        let characteristicsIDRef = this.getUniqueIDForReference() + 'characteristicsID'
+                        console.log("characteristicsIDRef with UserName:=====>>",characteristicsIDRef);
+                        database()
+                        .ref(characteristicsIDRef)
+                         .set({
+                          description: 'Characteristics UUID',
+                          id: characteristic.uuid,
+                        })
+                        .then(() => console.log('Data set for characteristicsID in devices screen'));
+                        analytics().logEvent('ask_for_service', {
+                          description: 'Characteristics UUID',
+                          id: characteristic.uuid,
+                        })
+                        */
                         this.deviceCharacteristics[device.id][characteristicPrefix] = characteristic;
                         return true;
                       }
@@ -454,11 +644,48 @@ class Devices extends Component {
 
                     if (i === services.length - 1) {
                       console.log("deviceCharacteristics List:", JSON.stringify(Object.keys(this.deviceCharacteristics[device.id])));
+                      /*
+                      ================================================================
+                        Uncomment to use analytics and realtime database of firebase 
+                      ================================================================
+                      let deviceCharacteristicsListRef = this.getUniqueIDForReference() + 'deviceCharacteristicsList'
+                      console.log("deviceCharacteristicsListRef with UserName:=====>>",deviceCharacteristicsListRef);
+                      database()
+                        .ref(deviceCharacteristicsListRef)
+                         .set({
+                          description: 'Device Characteristics List',
+                          id: JSON.stringify(Object.keys(this.deviceCharacteristics[device.id])),
+                          method: 'askForService',
+                        })
+                        .then(() => console.log('Data set for deviceCharacteristicsList in devices screen'));
+                      analytics().logEvent('ask_for_service', {
+                        description: 'deviceCharacteristics List',
+                        id: JSON.stringify(Object.keys(this.deviceCharacteristics[device.id])),
+                      })
+                      */
                       const dialog = Object.values(this.deviceCharacteristics[device.id]).find(
                         characteristic => characteristic.isWritableWithResponse || characteristic.isWritableWithoutResponse
                       )
                       if (!dialog) {
                         console.log("No writable characteristic");
+                        /*
+                        ================================================================
+                          Uncomment to use analytics and realtime database of firebase 
+                        ================================================================
+                        let noWritableCharacteristicsRef = this.getUniqueIDForReference() + 'noWritableCharacteristics'
+                        console.log("noWritableCharacteristicsRef with UserName:=====>>",noWritableCharacteristicsRef);
+                        database()
+                        .ref(noWritableCharacteristicsRef)
+                         .set({
+                          description: 'Required characteristics not found. Disconnecting from sensor..',
+                          name: 'No writable characteristic',
+                          method: 'askForService',
+                        })
+                        .then(() => console.log('Data set for noWritableCharacteristics in devices screen'));
+                        analytics().logEvent('ask_for_service', {
+                          description: 'No writable characteristic',
+                        })
+                        */
                         this.setState({
                           bleMessage: 'Required characteristics not found. Disconnecting from sensor..',
                           waitingDeviceLoader: false
@@ -466,6 +693,25 @@ class Devices extends Component {
                         device.cancelConnection();
                       }
                       else {
+                        /*
+                        ================================================================
+                          Uncomment to use analytics and realtime database of firebase 
+                        ================================================================
+                        let writableCharacteristicsRef = this.getUniqueIDForReference() + 'writableCharacteristics'
+                        console.log("writableCharacteristicsRef with UserName:=====>>",writableCharacteristicsRef);
+                        database()
+                        .ref(writableCharacteristicsRef)
+                         .set({
+                          description: 'Characteristics discovered..',
+                          name: 'Opening registration modal..',
+                          method: 'askForService',
+                        })
+                        .then(() => console.log('Data set for writableCharacteristics in devices screen'));
+                        analytics().logEvent('ask_for_service', {
+                          description: 'Characteristics discovered..',
+                          detail: 'Opening registration modal..',
+                        })
+                        */
                         this.setState({
                           bleMessage: 'Characteristics discovered..',
                           waitingDeviceLoader: true
@@ -484,11 +730,45 @@ class Devices extends Component {
 
                           });
                           if (deviceDeletionCharFound) {
+                            /*
+                            ================================================================
+                              Uncomment to use analytics and realtime database of firebase 
+                            ================================================================
+                            let deviceDeletionCharacteristicsFoundRef = this.getUniqueIDForReference() + 'deviceDeletionCharacteristicsFound'
+                            console.log("deviceDeletionCharacteristicsFoundRef with UserName:=====>>",deviceDeletionCharacteristicsFoundRef);
+                            database()
+                              .ref(deviceDeletionCharacteristicsFoundRef)
+                                .set({
+                                  description: 'Deleting Sensor service found....................',
+                                  method: 'askForService',
+                                })
+                                  .then(() => console.log('Data set for deviceDeletionCharacteristicsFound in devices screen'));
+                            analytics().logEvent('ask_for_service', {
+                              description: 'Deleting Sensor service found....................',
+                            })
+                            */
                              console.log('Deleting Sensor service found....................');
                              this.setState({ deviceDiscoveryModalVisible: false, waitingDeviceLoader: false});
                              this.sendSensorDeletionPayload(this.deviceDeleteChar,eui64,device);
                           }
                         else {
+                          /*
+                          ================================================================
+                            Uncomment to use analytics and realtime database of firebase 
+                          ================================================================
+                          let deviceDeletionCharacteristicsNotFoundRef = this.getUniqueIDForReference() + 'deviceDeletionCharacteristicsNotFound'
+                          console.log("deviceDeletionCharacteristicsNotFoundRef with UserName:=====>>",deviceDeletionCharacteristicsNotFoundRef);
+                            database()
+                              .ref(deviceDeletionCharacteristicsNotFoundRef)
+                                .set({
+                                  description: 'One of the required characteristic for deletion of sensor not found in connected gateway. Disconnecting..',
+                                  method: 'askForService',
+                                })
+                                  .then(() => console.log('Data set for deviceDeletionCharacteristicsNotFound in devices screen'));
+                          analytics().logEvent('ask_for_service', {
+                            description: 'One of the required characteristic for deletion of sensor not found in connected gateway. Disconnecting..',
+                          })
+                          */
                           alert("One of the required characteristic for deletion of sensor not found in connected gateway. Disconnecting..");
                         }
                       }
@@ -500,11 +780,50 @@ class Devices extends Component {
             .catch((error) => {
                 this.props.uiStopLoading();
               if (error.errorCode === 205) {
+                /*
+                ================================================================
+                  Uncomment to use analytics and realtime database of firebase 
+                ================================================================
+                let errorAskForServicesRef = this.getUniqueIDForReference() + 'errorAskForServices'
+                console.log("errorAskForServicesRef with UserName:=====>>",errorAskForServicesRef);
+                database()
+                  .ref(errorAskForServicesRef)
+                    .set({
+                      description: 'Unable to connect device......',
+                      errorMessage: error.message,
+                      errorCode: error.errorCode,
+                      method: 'askForService',
+                    })
+                      .then(() => console.log('Data set for errorAskForServices in devices screen'));
+                analytics().logEvent('ask_for_service_error_message', {
+                  description: error.message,
+                  detail: 'Unable to connect device......',
+                })
+                */
                 console.log("ErrorMessage:" + error.message);
                 this.props.onRemoveDevice(device.id);
                 alert('Unable to connect device......');
               }
               else {
+                /*
+                ================================================================
+                  Uncomment to use analytics and realtime database of firebase 
+                ================================================================
+                let errorToConnectAskForServicesRef = this.getUniqueIDForReference() + 'errorToConnectAskForServices'
+                console.log("errorToConnectAskForServicesRef with UserName:=====>>",errorToConnectAskForServicesRef);
+                database()
+                  .ref(errorToConnectAskForServicesRef)
+                    .set({
+                      description: 'Unable to connect to Gateway. Please try adding sensor again.',
+                      method: 'askForService',
+                      errorMessage: error.message,
+                      errorCode: error.errorCode,
+                    })
+                      .then(() => console.log('Data set for errorToConnectAskForServices in devices screen'));
+                analytics().logEvent('ask_for_service_error_message', {
+                  description: 'Unable to connect to Gateway. Please try adding sensor again.',
+                })
+                */
                 this.setState({
                   deviceDiscoveryModalVisible: false,
                   bleMessage: 'Error: Unable to connect to Gateway. Please try adding sensor again.',
@@ -514,6 +833,26 @@ class Devices extends Component {
                 console.log("ErrorCode:" + error.errorCode)
                 device.cancelConnection().catch(error => {
                   console.log("Sensor is already disconnected." + error.message);
+                  /*
+                  ================================================================
+                    Uncomment to use analytics and realtime database of firebase 
+                  ================================================================
+                  let errorCancelConnectionAskForServicesRef = this.getUniqueIDForReference() + 'errorCancelConnectionAskForServices'
+                  console.log("errorCancelConnectionAskForServicesRef with UserName:=====>>",errorCancelConnectionAskForServicesRef);
+                  database()
+                  .ref(errorCancelConnectionAskForServicesRef)
+                    .set({
+                      description: 'Sensor is already disconnected.',
+                      errorMessage: error.message,
+                      errorCode: error.errorCode,
+                      method: 'askForService',
+                    })
+                      .then(() => console.log('Data set for errorAskForServices in devices screen'));
+                  analytics().logEvent('ask_for_service_error_message', {
+                    description: error.message,
+                    detail: 'Sensor is already disconnected.',
+                  })
+                  */
                 });
               }
             })
@@ -544,71 +883,132 @@ class Devices extends Component {
 
           if (visible) {
             this.props.uiStartLoading('Deleting Selected Sensor');
-            this.props.bleManager.disable()
-            setTimeout(()=>{
-            this.props.bleManager.enable() },1000);
-          setTimeout(()=>{
-            const subscription = this.props.bleManager.onStateChange((state) => {
-              if (state === 'PoweredOn') {
-                if (!inBackground) this.setState({ deviceDiscoveryModalVisible: false, waitingDeviceLoader: false });
-                console.log("Checking for gateway connection");
-
-                console.log('id', this.GatewayMacID, this.growAreaId);
-                console.log('Total gateways Devices connected----------------', this.props.bleDevices);
-                if (this.growAreaId) {
-                     console.log('in this.pros.----------------', this.props.bleDevices[this.GatewayMacID]);
-                     payload = [{"gatewayId": this.growAreaId,"sensorId":sensorId,"deviceType":Constant.SENSOR_TYPE}];
-                     if (this.props.bleDevices[this.GatewayMacID]) {
-                       this.device = this.props.bleDevices[this.GatewayMacID];
-                       console.log("Gateway found in redux..", this.device);
-                       this.props.bleManager.destroy();
-                       this.props.onSetBleManager(new BleManager());
-                        console.log("after---"+this.props.bleDevices);
-                        this.timeOutValue = setTimeout(() => {
-                              this.setState({ deviceDiscoveryModalVisible: false, waitingDeviceLoader: false });
-                              this.props.uiStartLoading("Deleting Selected Sensor");
-                              this.factoryResetDevice(payload,sensorId);
-                        }, 20000)
-                        console.log("Scanning for gateway..")
-                        this.props.uiStopLoading();
-                        this.scanAndConnectForDeleteSensor(inBackground,payload,sensorId,eui64);
-                      }
-                     else
-                     {
-                        this.timeOutValue = setTimeout(() => {
+            if (Platform.OS === 'ios') {
+              const subscription = this.props.bleManager.onStateChange((state) => {
+                if (state === 'PoweredOn') {
+                  if (!inBackground) this.setState({ deviceDiscoveryModalVisible: false, waitingDeviceLoader: false });
+                  console.log("Checking for gateway connection");
+  
+                  console.log('id', this.GatewayMacID, this.growAreaId);
+                  console.log('Total gateways Devices connected----------------', this.props.bleDevices);
+                  if (this.growAreaId) {
+                       console.log('in this.pros.----------------', this.props.bleDevices[this.GatewayMacID]);
+                       payload = [{"gatewayId": this.growAreaId,"sensorId":sensorId,"deviceType":Constant.SENSOR_TYPE}];
+                       if (this.props.bleDevices[this.GatewayMacID]) {
+                         this.device = this.props.bleDevices[this.GatewayMacID];
+                         console.log("Gateway found in redux..", this.device);
+                          console.log("after---"+this.props.bleDevices);
+                          this.timeOutValue = setTimeout(() => {
                                 this.setState({ deviceDiscoveryModalVisible: false, waitingDeviceLoader: false });
                                 this.props.uiStartLoading("Deleting Selected Sensor");
                                 this.factoryResetDevice(payload,sensorId);
-                        }, 20000)
-                        this.props.uiStopLoading();
-                        console.log("Scanning for gateway..")
-                        this.scanAndConnectForDeleteSensor(inBackground,payload,sensorId,eui64);
-
-                     }
-                 }
-                 else
-                 {
-                      payload = [{"gatewayId": this.state.gatewayforSensor,"sensorId":sensorId,"deviceType":Constant.SENSOR_TYPE}];
-                      console.log("payload for sensor delete --"+JSON.stringify(payload)); 
-                      this.timeOutValue = setTimeout(() => {
-                       this.setState({ deviceDiscoveryModalVisible: false, waitingDeviceLoader: false });
+                          }, 20000)
+                          console.log("Scanning for gateway..")
+                          this.props.uiStopLoading();
+                          this.scanAndConnectForDeleteSensor(inBackground,payload,sensorId,eui64);
+                        }
+                       else
+                       {
+                          this.timeOutValue = setTimeout(() => {
+                                  this.setState({ deviceDiscoveryModalVisible: false, waitingDeviceLoader: false });
                                   this.props.uiStartLoading("Deleting Selected Sensor");
+                                  this.factoryResetDevice(payload,sensorId);
+                          }, 20000)
+                          this.props.uiStopLoading();
+                          console.log("Scanning for gateway..")
+                          this.scanAndConnectForDeleteSensor(inBackground,payload,sensorId,eui64);
+  
+                       }
+                   }
+                   else
+                   {
+                        payload = [{"gatewayId": this.state.gatewayforSensor,"sensorId":sensorId,"deviceType":Constant.SENSOR_TYPE}];
+                        console.log("payload for sensor delete --"+JSON.stringify(payload)); 
+                        this.timeOutValue = setTimeout(() => {
+                         this.setState({ deviceDiscoveryModalVisible: false, waitingDeviceLoader: false });
+                                    this.props.uiStartLoading("Deleting Selected Sensor");
+                                  this.factoryResetDevice(payload,sensorId);
+                         }, 20000)
+                         this.props.uiStopLoading();
+                         console.log("Scanning for gateway..")
+                         this.scanAndConnectForDeleteSensor(inBackground,payload,sensorId,eui64);
+  
+                   }
+                  subscription.remove();
+                }
+                else if (state === 'PoweredOff') {
+                  console.log("in poweroff state");
+                  alert("Please turn on the bluetooth");
+                }
+              }, true);
+            }
+            else {
+              this.props.bleManager.disable()
+              setTimeout(()=>{
+              this.props.bleManager.enable() },1000);
+            setTimeout(()=>{
+              const subscription = this.props.bleManager.onStateChange((state) => {
+                if (state === 'PoweredOn') {
+                  if (!inBackground) this.setState({ deviceDiscoveryModalVisible: false, waitingDeviceLoader: false });
+                  console.log("Checking for gateway connection");
+  
+                  console.log('id', this.GatewayMacID, this.growAreaId);
+                  console.log('Total gateways Devices connected----------------', this.props.bleDevices);
+                  if (this.growAreaId) {
+                       console.log('in this.pros.----------------', this.props.bleDevices[this.GatewayMacID]);
+                       payload = [{"gatewayId": this.growAreaId,"sensorId":sensorId,"deviceType":Constant.SENSOR_TYPE}];
+                       if (this.props.bleDevices[this.GatewayMacID]) {
+                         this.device = this.props.bleDevices[this.GatewayMacID];
+                         console.log("Gateway found in redux..", this.device);
+                         this.props.bleManager.destroy();
+                         this.props.onSetBleManager(new BleManager());
+                          console.log("after---"+this.props.bleDevices);
+                          this.timeOutValue = setTimeout(() => {
+                                this.setState({ deviceDiscoveryModalVisible: false, waitingDeviceLoader: false });
+                                this.props.uiStartLoading("Deleting Selected Sensor");
                                 this.factoryResetDevice(payload,sensorId);
-                       }, 20000)
-                       this.props.uiStopLoading();
-                       console.log("Scanning for gateway..")
-                       this.scanAndConnectForDeleteSensor(inBackground,payload,sensorId,eui64);
-
-                 }
-                subscription.remove();
-              }
-              else if (state === 'PoweredOff') {
-                console.log("in poeroff state");
-                this.props.bleManager.enable()
-              }
-            }, true);
-
-          },2000);
+                          }, 20000)
+                          console.log("Scanning for gateway..")
+                          this.props.uiStopLoading();
+                          this.scanAndConnectForDeleteSensor(inBackground,payload,sensorId,eui64);
+                        }
+                       else
+                       {
+                          this.timeOutValue = setTimeout(() => {
+                                  this.setState({ deviceDiscoveryModalVisible: false, waitingDeviceLoader: false });
+                                  this.props.uiStartLoading("Deleting Selected Sensor");
+                                  this.factoryResetDevice(payload,sensorId);
+                          }, 20000)
+                          this.props.uiStopLoading();
+                          console.log("Scanning for gateway..")
+                          this.scanAndConnectForDeleteSensor(inBackground,payload,sensorId,eui64);
+  
+                       }
+                   }
+                   else
+                   {
+                        payload = [{"gatewayId": this.state.gatewayforSensor,"sensorId":sensorId,"deviceType":Constant.SENSOR_TYPE}];
+                        console.log("payload for sensor delete --"+JSON.stringify(payload)); 
+                        this.timeOutValue = setTimeout(() => {
+                         this.setState({ deviceDiscoveryModalVisible: false, waitingDeviceLoader: false });
+                                    this.props.uiStartLoading("Deleting Selected Sensor");
+                                  this.factoryResetDevice(payload,sensorId);
+                         }, 20000)
+                         this.props.uiStopLoading();
+                         console.log("Scanning for gateway..")
+                         this.scanAndConnectForDeleteSensor(inBackground,payload,sensorId,eui64);
+  
+                   }
+                  subscription.remove();
+                }
+                else if (state === 'PoweredOff') {
+                  console.log("in poeroff state");
+                  this.props.bleManager.enable()
+                }
+              }, true);
+  
+            },2000);
+            }
           }
         }
         
@@ -639,7 +1039,7 @@ class Devices extends Component {
     {
         this.props.uiStartLoading("Provisioning Selected Sensors");
         this.props.bleManager.stopDeviceScan();
-
+        console.log("Register software sensor with payload:=====>>",payload);
         this.setState({modalVisibleForSoftwareSensor: false,waitingDeviceLoader: false,discoveredSoftwareSensor:{}});
         if(payload.length !== 0)
         {
@@ -650,14 +1050,26 @@ class Devices extends Component {
 
             payload.map((pay) =>
             {
-            let apiPayload = {
-                gatewayId : pay.gatewayId,
-                sensorName : pay.device_name,
-                eui64 : pay.eui64,
-                deviceType : pay.device_type,
-                description : pay.description,
-            }
-            apiFinalPayload.push(apiPayload);
+              if (Platform.OS === 'ios') {
+                let apiPayload = {
+                  gatewayId : pay.gatewayId,
+                  sensorName : pay.device_name,
+                  eui64 : pay.deviceUId,
+                  deviceType : pay.device_type,
+                  description : pay.description,
+                }
+                apiFinalPayload.push(apiPayload);
+              }
+              else {
+                let apiPayload = {
+                  gatewayId : pay.gatewayId,
+                  sensorName : pay.device_name,
+                  eui64 : pay.eui64,
+                  deviceType : pay.device_type,
+                  description : pay.description,
+                }
+                apiFinalPayload.push(apiPayload);
+              }
           })
             payload.map(async (item) => {
             try {
@@ -680,7 +1092,33 @@ class Devices extends Component {
     }
     connectCharacteristicsAndServices(device)
     {
+      console.log("Connect characteristics and services called");
+      /*
+      ================================================================
+        Uncomment to use analytics and realtime database of firebase 
+      ================================================================
+      let connectCharsAndServicesRef = this.getUniqueIDForReference() + 'connectCharacteristicsAndServices'
+      console.log("connectCharacteristicsAndServices with UserName:=====>>",connectCharsAndServicesRef);
+          database()
+        .ref(connectCharsAndServicesRef)
+        .set({
+          id: device.id,
+          name: device.name,
+          description: 'Discovering services and characteristics...',
+          method: 'connectCharacteristicsAndServices'
+        })
+        .then(() => console.log('Data set for connectCharacteristicsAndServices in devices screen'));
+      analytics().logEvent('connect_characteristics_services', {
+        description: 'connect characteristics and services',
+        detail: 'Discovering services and characteristics...',
+        id: device.id,
+        name: device.name,
+      })
+      */
+      console.log("connect characteristics and services");
           console.log("Discovering services and characteristics...");
+          console.log("Device Name:=====>>",device.name);
+          console.log("Device ID:=====>>",device.id);
               this.setState({
                 bleMessage: 'Discovering services and characteristics...',
                 waitingDeviceLoader: true
@@ -695,6 +1133,25 @@ class Devices extends Component {
                     console.log("Total Services size:" + services.length);
                     if (services.length === 0) {
                       console.log("No known services found in connected device.");
+                      /*
+                      ================================================================
+                        Uncomment to use analytics and realtime database of firebase 
+                      ================================================================
+                      let deviceServicesForConnectCharsAndServicesRef = this.getUniqueIDForReference() + 'deviceServicesForConnectCharsAndServices'
+                      console.log("deviceServicesForConnectCharsAndServicesRef with UserName:=====>>",deviceServicesForConnectCharsAndServicesRef);
+                      database()
+                        .ref(deviceServicesForConnectCharsAndServicesRef)
+                          .set({
+                            description: 'No known services found in connected device.',
+                            detail: 'Discover all services and characteristics',
+                            method: 'connectCharacteristicsAndServices',
+                          })
+                            .then(() => console.log('Data set for deviceServicesForConnectCharsAndServices in devices screen'));
+                      analytics().logEvent('connect_characteristics_services', {
+                        description: 'No known services found in connected device.',
+                        detail: 'Discover all services and characteristics',
+                      })
+                      */
                       this.setState({
                         bleMessage: 'Required services not found. Disconnecting from device..',
                         waitingDeviceLoader: false
@@ -702,6 +1159,25 @@ class Devices extends Component {
                       device.cancelConnection();
                     }
                     else {
+                      /*
+                      ================================================================
+                        Uncomment to use analytics and realtime database of firebase 
+                      ================================================================
+                      let discoverServicesForConnectCharsAndServicesRef = this.getUniqueIDForReference() + 'discoverServicesForConnectCharsAndServices'
+                      console.log("deviceServicesForConnectCharsAndServicesRef with UserName:=====>>",discoverServicesForConnectCharsAndServicesRef);
+                      database()
+                        .ref(discoverServicesForConnectCharsAndServicesRef)
+                          .set({
+                            description: 'Services discovered..',
+                            detail: 'Discover all services and characteristics',
+                            method: 'connectCharacteristicsAndServices',
+                          })
+                            .then(() => console.log('Data set for discoverServicesForConnectCharsAndServices in devices screen'));
+                      analytics().logEvent('connect_characteristics_services', {
+                        description: 'Services discovered..',
+                        detail: 'Discover all services and characteristics',
+                      })
+                      */
                       this.setState({
                         bleMessage: 'Services discovered..',
                         waitingDeviceLoader: true
@@ -711,6 +1187,27 @@ class Devices extends Component {
                     services.forEach((service, i) => {
                       if (service.uuid.startsWith(Constant.KNOWN_BLE_SERVICES.SERVICE_SW_SENSOR_PROVISION_UUID))
                       {
+                        /*
+                        ================================================================
+                          Uncomment to use analytics and realtime database of firebase 
+                        ================================================================
+                        let serviceIDForConnectCharsAndServicesRef = this.getUniqueIDForReference() + 'serviceIDForConnectCharsAndServices'
+                        console.log("deviceServicesForConnectCharsAndServicesRef with UserName:=====>>",serviceIDForConnectCharsAndServicesRef);
+                        database()
+                        .ref(serviceIDForConnectCharsAndServicesRef)
+                          .set({
+                            description: 'Service UUID',
+                            detail: 'Discover all services and characteristics',
+                            method: 'connectCharacteristicsAndServices',
+                            id: service.uuid,
+                          })
+                            .then(() => console.log('Data set for serviceIDForConnectCharsAndServices in devices screen'));
+                        analytics().logEvent('connect_characteristics_services', {
+                          description: 'Service UUID',
+                          detail: 'Discover all services and characteristics',
+                          id: service.uuid
+                        })
+                        */
                         service.characteristics().then(characteristics => {
                         console.log("Service UUID:" + service.uuid);
                         console.log("Initial characteristics size:" + characteristics.length);
@@ -718,6 +1215,27 @@ class Devices extends Component {
 
                           characteristicPrefix = this.isKnownCharacteristic(characteristic);
                           if (characteristicPrefix) {
+                            /*
+                            ================================================================
+                              Uncomment to use analytics and realtime database of firebase 
+                            ================================================================
+                            let characteristicsIDForConnectCharsAndServicesRef = this.getUniqueIDForReference() + 'characteristicsIDForConnectCharsAndServices'
+                            console.log("characteristicsIDForConnectCharsAndServicesRef with UserName:=====>>",characteristicsIDForConnectCharsAndServicesRef);
+                            database()
+                            .ref(characteristicsIDForConnectCharsAndServicesRef)
+                              .set({
+                                description: 'Characteristics UUID',
+                                detail: 'Discover all services and characteristics',
+                                method: 'connectCharacteristicsAndServices',
+                                id: characteristic.uuid,
+                              })
+                            .then(() => console.log('Data set for characteristicsIDForConnectCharsAndServices in devices screen'));
+                            analytics().logEvent('connect_characteristics_services', {
+                              description: 'Characteristics UUID',
+                              detail: 'Discover all services and characteristics',
+                              id: characteristic.uuid
+                            })
+                            */
                             console.log("Characteristics UUID:" + characteristic.uuid);
                             this.deviceCharacteristics[device.id][characteristicPrefix] = characteristic;
                             return true;
@@ -726,7 +1244,26 @@ class Devices extends Component {
                         console.log("After filtering characteristics size:" + characteristics.length);
 
                           console.log("deviceCharacteristics List:", JSON.stringify(Object.keys(this.deviceCharacteristics[device.id])));
-                            this.setState({
+                          /*
+                          ================================================================
+                            Uncomment to use analytics and realtime database of firebase 
+                          ================================================================
+                          let deviceCharacteristicsListForConnectCharsAndServicesRef = this.getUniqueIDForReference() + 'deviceCharacteristicsListForConnectCharsAndServices'
+                          console.log("deviceCharacteristicsListForConnectCharsAndServicesRef with UserName:=====>>",deviceCharacteristicsListForConnectCharsAndServicesRef);
+                          database()
+                            .ref(deviceCharacteristicsListForConnectCharsAndServicesRef)
+                              .set({
+                                description: 'Characteristics discovered..',
+                                method: 'connectCharacteristicsAndServices',
+                                id: JSON.stringify(Object.keys(this.deviceCharacteristics[device.id])),
+                              })
+                            .then(() => console.log('Data set for deviceCharacteristicsListForConnectCharsAndServices in devices screen'));
+                          analytics().logEvent('connect_characteristics_services', {
+                            description: 'Characteristics discovered..',
+                            detail: 'Discover all services and characteristics',
+                          })  
+                          */
+                          this.setState({
                               bleMessage: 'Characteristics discovered..',
                               waitingDeviceLoader: true
                             })
@@ -776,6 +1313,26 @@ class Devices extends Component {
                 })
                 .catch((error) => {
                   if (error.errorCode === 205) {
+                    /*
+                    ================================================================
+                      Uncomment to use analytics and realtime database of firebase 
+                    ================================================================
+                    let errorForConnectCharacteristicsAndServicesRef = this.getUniqueIDForReference() + 'errorForConnectCharacteristicsAndServices'
+                    console.log("errorForConnectCharacteristicsAndServicesRef with UserName:=====>>",errorForConnectCharacteristicsAndServicesRef);
+                    database()
+                    .ref(errorForConnectCharacteristicsAndServicesRef)
+                    .set({
+                      description: 'Unable to connect device......',
+                      errorMessage: error.message,
+                      errorCode: error.errorCode,
+                      method: 'connectCharacteristicsAndServices',
+                    })
+                      .then(() => console.log('Data set for errorForConnectCharacteristicsAndServices in devices screen'));
+                    analytics().logEvent('connect_characteristics_services', {
+                      description: 'ErrorMessage',
+                      detail: error.message,
+                    }) 
+                    */
                     console.log("ErrorMessage:" + error.message);
                     this.props.onRemoveDevice(device.id);
                     setTimeout(() => {
@@ -787,6 +1344,26 @@ class Devices extends Component {
                       bleMessage: 'Error: Unable to connect to Gateway. Please try adding sensor again.',
                       waitingDeviceLoader: false
                     })
+                    /*
+                    ================================================================
+                      Uncomment to use analytics and realtime database of firebase 
+                    ================================================================
+                    let errorToConnectForConnectCharacteristicsAndServicesRef = this.getUniqueIDForReference() + 'errorToConnectForConnectCharacteristicsAndServices'
+                    console.log("errorToConnectForConnectCharacteristicsAndServicesRef with UserName:=====>>",errorToConnectForConnectCharacteristicsAndServicesRef);
+                    database()
+                    .ref(errorToConnectForConnectCharacteristicsAndServicesRef)
+                    .set({
+                      description: 'No readable characteristics in connected Sensor',
+                      errorMessage: error.message,
+                      errorCode: error.errorCode,
+                      method: 'connectCharacteristicsAndServices',
+                    })
+                      .then(() => console.log('Data set for errorToConnectForConnectCharacteristicsAndServices in devices screen'));
+                    analytics().logEvent('connect_characteristics_services', {
+                      description: 'No readable characteristics in connected Sensor',
+                      detail: error.message,
+                    }) 
+                    */
                     console.log("Error: " + error.message)
                     console.log("ErrorCode:" + error.errorCode)
                     alert('No readable characteristics in connected Sensor');
@@ -975,18 +1552,30 @@ class Devices extends Component {
 
           }
           else {
-            this.props.bleManager.destroy();
-             this.props.onSetBleManager(new BleManager());
-             this.props.bleManager.disable()
-             setTimeout(()=>{this.props.bleManager.enable() },1000);
+             if (Platform.OS === 'android') {
+              this.props.bleManager.destroy();
+              this.props.onSetBleManager(new BleManager());
+              this.props.bleManager.disable()
+              setTimeout(()=>{this.props.bleManager.enable() },1000);
+             }
+             else {
+              this.props.bleManager.destroy();
+              this.props.onSetBleManager(new BleManager());
+             }
             this.props.uiStopLoading();
             alert("Something went wrong while provision sensor. Please try again");
           }
         } catch (err) {
-            this.props.bleManager.destroy();
-            this.props.onSetBleManager(new BleManager());
-            this.props.bleManager.disable()
+            if (Platform.OS === 'android') {
+              this.props.bleManager.destroy();
+              this.props.onSetBleManager(new BleManager());
+              this.props.bleManager.disable()
             setTimeout(()=>{this.props.bleManager.enable() },1000);
+            }
+            else {
+              this.props.bleManager.destroy();
+              this.props.onSetBleManager(new BleManager());
+            }
           this.props.uiStopLoading();
           alert("Something went wrong while provision sensor. Please try again");
         }
@@ -1057,25 +1646,26 @@ class Devices extends Component {
 
         this.writeCharacteristics(this.deviceNotificationChar, payload, (this.deviceCharacteristics[this.device.id].mtu - 3), 'sendProvisionDevices')
         if (this.deviceProvisionCallbackChar && this.onTimeRegistredDevices != 0) {
-          console.log('hello if-==-=-=-=-');
+          console.log('hello if-==-=-=-=-',this.deviceProvisionCallbackChar);
 
           this.handleProvisionCallbackNotifications(this.deviceProvisionCallbackChar);
         }
         this.showDeviceDiscoveryModal(false, true, true, false);
         if (this.onTimeRegistredDevices !== 0) {
           this.setState({ deviceRegistrationModalVisible: true })
-          setTimeout(() => {
-            console.log('this.state.isRegistrationProcessCompleted', this.state.isRegistrationProcessCompleted);
-            if (!this.state.isRegistrationProcessCompleted) {
-              this.setState({ deviceRegistrationModalVisible: false, isRegistrationProcessCompleted: true, errorCode: 1 })
-              this.onTimeRegistredDevices = 0;
-              this._onRefresh();
-              this.disconnectBleConnection();
-
-            }
-          }, (this.onTimeRegistredDevices * 120000))  // set 2 min timer to read response for sensors.
+            setTimeout(() => {
+              console.log('this.state.isRegistrationProcessCompleted', this.state.isRegistrationProcessCompleted);
+              if (!this.state.isRegistrationProcessCompleted) {
+                this.setState({ deviceRegistrationModalVisible: false, isRegistrationProcessCompleted: true, errorCode: 1 })
+                this.onTimeRegistredDevices = 0;
+                this._onRefresh();
+                // if (Platform.OS === 'android') {
+                  this.disconnectBleConnection();
+                // }
+              }
+            }, (this.onTimeRegistredDevices * 120000))  // set 2 min timer to read response for sensors.
+          }
         }
-      }
       else {
         if (this.device)
           alert('Connected BLE device does not have provision capabilities.');
@@ -1119,7 +1709,20 @@ class Devices extends Component {
  checkForGatewayConnection = (inBackground) => {
     console.log('id', this.GatewayMacID, this.growAreaId);
     console.log('gateways in redux0-0-0-0-0-0-0-0-0-0-0-0-', this.props.bleDevices);
-
+    /*
+    ================================================================
+      Uncomment to use analytics and realtime database of firebase 
+    ================================================================
+    let checkForGatewayConnectionRef = this.getUniqueIDForReference() + 'checkForGatewayConnection'
+    console.log("checkForGatewayConnectionRef with UserName:=====>>",checkForGatewayConnectionRef);
+    database()
+      .ref(checkForGatewayConnectionRef)
+        .set({
+          description: 'Gateway found in redux..',
+          method: 'checkForGatewayConnection',
+        })
+          .then(() => console.log('Data set for checkForGatewayConnection in devices screen'));
+    */
     if (this.growAreaId) {
       console.log('in this.pros.----------------', this.props.bleDevices[this.GatewayMacID]);
 
@@ -1151,20 +1754,70 @@ class Devices extends Component {
   }
 
   askForDevices = (device) => {
+    console.log("Ask for devices");
+    if (Platform.OS === 'ios') {
+      deviceID = device.name.split(gateway_discovery_name_prefix).pop();
+      console.log("Scanning Gateway Mac ID : ====>",deviceID);
+    }
+    else {
+      deviceID = device.id
+    }
+    /*
+    ================================================================
+      Uncomment to use analytics and realtime database of firebase 
+    ================================================================
+    let askForDevicesRef = this.getUniqueIDForReference() + 'askForDevices'
+    database()
+      .ref(askForDevicesRef)
+        .set({
+          id: deviceID,
+          name: device.name,
+          description: 'Discovering services and characteristics...',
+          method: 'askForDevices',
+        })
+        .then(() => console.log('Data set for askForDevices in devices screen'));
+    analytics().logEvent('ask_for_devices', {
+      description: 'Ask for devices',
+      detail: 'Discovering services and characteristics...',
+      id: deviceID,
+      name: device.name
+    }) 
+    */
     console.log("Discovering services and characteristics...");
+    console.log("Device Name:=====>>",device.name);
+    console.log("Device ID:=====>>",deviceID);
     this.setState({
       bleMessage: 'Discovering services and characteristics...',
       waitingDeviceLoader: true
     })
     device.discoverAllServicesAndCharacteristics()
       .then((device) => {
-        console.log("DeviceId:" + device.id);
+        console.log("DeviceId:" + deviceID);
         this.deviceCharacteristics[device.id] = {};
         this.deviceCharacteristics[device.id]['mtu'] = device.mtu;
         device.services().then(services => {
           services = services.filter(this.isKnownService);
           console.log("Known Services size:" + services.length)
           if (services.length === 0) {
+            /*
+            ================================================================
+              Uncomment to use analytics and realtime database of firebase 
+            ================================================================
+            let deviceServicesForAskForDevicesRef = this.getUniqueIDForReference() + 'deviceServicesForAskForDevices'
+            console.log("deviceServicesForAskForDevicesRef with UserName:=====>>",deviceServicesForAskForDevicesRef);
+            database()
+              .ref(deviceServicesForAskForDevicesRef)
+                .set({
+                  description: 'No known services found in connected device.',
+                  detail: 'Discover all services and characteristics',
+                  method: 'askForDevices',
+                  })
+                    .then(() => console.log('Data set for deviceServicesForAskForDevices in devices screen'));
+            analytics().logEvent('ask_for_devices', {
+              description: 'No known services found in connected device.',
+              detail: 'Discover all services and characteristics...',
+            })
+            */
             console.log("No known services found in connected device.");
             this.setState({
               bleMessage: 'Required services not found. Disconnecting from device..',
@@ -1173,6 +1826,25 @@ class Devices extends Component {
             device.cancelConnection();
           }
           else {
+            /*
+            ================================================================
+              Uncomment to use analytics and realtime database of firebase 
+            ================================================================
+            let discoverServicesForAskForDevicesRef = this.getUniqueIDForReference() + 'discoverServicesForAskForDevicesRef'
+            console.log("discoverServicesForAskForDevicesRef with UserName:=====>>",discoverServicesForAskForDevicesRef);
+            database()
+              .ref(discoverServicesForAskForDevicesRef)
+                .set({
+                  description: 'Services discovered..',
+                    detail: 'Discover all services and characteristics',
+                    method: 'askForDevices',
+                  })
+                    .then(() => console.log('Data set for discoverServicesForConnectCharsAndServices in devices screen'));
+            analytics().logEvent('ask_for_devices', {
+              description: 'Services discovered..',
+              detail: 'Discover all services and characteristics...',
+            })
+            */
             this.setState({
               bleMessage: 'Services discovered..',
               waitingDeviceLoader: true
@@ -1180,12 +1852,55 @@ class Devices extends Component {
           }
           services.forEach((service, i) => {
             service.characteristics().then(characteristics => {
+              /*
+              ================================================================
+                Uncomment to use analytics and realtime database of firebase 
+              ================================================================
+              let serviceIDForAskForDevicesRef = this.getUniqueIDForReference() + 'serviceIDForAskForDevices'
+              console.log("serviceIDForAskForDevicesRef with UserName:=====>>",serviceIDForAskForDevicesRef);
+              database()
+                .ref(serviceIDForAskForDevicesRef)
+                  .set({
+                    description: 'Service UUID',
+                    detail: 'Discover all services and characteristics',
+                    method: 'askForDevices',
+                    id: service.uuid,
+                  })
+                    .then(() => console.log('Data set for serviceIDForAskForDevices in devices screen'));
+
+              analytics().logEvent('ask_for_devices', {
+                description: 'Service UUID',
+                id: service.uuid,
+                number: '1424',
+              })
+              */
               console.log("Service UUID:" + service.uuid);
               console.log("Initial characteristics size:" + characteristics.length);
               characteristics = characteristics.filter((characteristic) => {
 
                 characteristicPrefix = this.isKnownCharacteristic(characteristic);
                 if (characteristicPrefix) {
+                  /*
+                  ================================================================
+                    Uncomment to use analytics and realtime database of firebase 
+                  ================================================================
+                  let characteristicsIDForAskForDevicesRef = this.getUniqueIDForReference() + 'characteristicsIDForAskForDevicesRef'
+                  console.log("characteristicsIDForAskForDevicesRef with UserName:=====>>",characteristicsIDForAskForDevicesRef);
+                  database()
+                    .ref(characteristicsIDForAskForDevicesRef)
+                      .set({
+                        description: 'Characteristics UUID',
+                        detail: 'Discover all services and characteristics',
+                        method: 'askForDevices',
+                        id: characteristic.uuid,
+                      })
+                        .then(() => console.log('Data set for characteristicsIDForAskForDevices in devices screen'));
+                  analytics().logEvent('ask_for_devices', {
+                    description: 'Characteristics UUID',
+                    id: characteristic.uuid,
+                    number: '1435',
+                  })
+                  */
                   console.log("Characteristics UUID:" + characteristic.uuid);
                   this.deviceCharacteristics[device.id][characteristicPrefix] = characteristic;
                   return true;
@@ -1195,10 +1910,44 @@ class Devices extends Component {
 
               if (i === services.length - 1) {
                 console.log("deviceCharacteristics List:", JSON.stringify(Object.keys(this.deviceCharacteristics[device.id])));
+                /*
+                ================================================================
+                  Uncomment to use realtime database of firebase 
+                ================================================================
+                let deviceCharacteristicsListForAskForDevicesRef = this.getUniqueIDForReference() + 'deviceCharacteristicsListForAskForDevicesRef'
+                console.log("deviceCharacteristicsListForAskForDevicesRef with UserName:=====>>",deviceCharacteristicsListForAskForDevicesRef);
+                database()
+                  .ref(deviceCharacteristicsListForAskForDevicesRef)
+                    .set({
+                      description: 'Device Characteristics List',
+                      id: JSON.stringify(Object.keys(this.deviceCharacteristics[device.id])),
+                      method: 'askForDevices',
+                    })
+                      .then(() => console.log('Data set for deviceCharacteristicsListForAskForDevices in devices screen'));
+                */
                 const dialog = Object.values(this.deviceCharacteristics[device.id]).find(
                   characteristic => characteristic.isWritableWithResponse || characteristic.isWritableWithoutResponse
                 )
                 if (!dialog) {
+                  /*
+                  ================================================================
+                    Uncomment to use analytics and realtime database of firebase 
+                  ================================================================
+                  let noWritableCharacteristicsForAskForDevicesRef = this.getUniqueIDForReference() + 'noWritableCharacteristicsForAskForDevices'
+                  console.log("noWritableCharacteristicsForAskForDevicesRef with UserName:=====>>",noWritableCharacteristicsForAskForDevicesRef);
+                  database()
+                    .ref(noWritableCharacteristicsForAskForDevicesRef)
+                      .set({
+                        description: 'Required characteristics not found. Disconnecting from sensor..',
+                        name: 'No writable characteristic',
+                        method: 'askForDevices',
+                      })
+                        .then(() => console.log('Data set for noWritableCharacteristicsForAskForDevices in devices screen'));
+                  analytics().logEvent('ask_for_devices', {
+                    description: 'No writable characteristic',
+                    number: '1452',
+                  })
+                  */
                   console.log("No writable characteristic");
                   this.setState({
                     bleMessage: 'Required characteristics not found. Disconnecting from sensor..',
@@ -1207,6 +1956,27 @@ class Devices extends Component {
                   device.cancelConnection();
                 }
                 else {
+                  /*
+                  ================================================================
+                    Uncomment to use analytics and realtime database of firebase 
+                  ================================================================
+                  let writableCharacteristicsForAskForDevicesRef = this.getUniqueIDForReference() + 'writableCharacteristicsForAskForDevices'
+                  console.log("writableCharacteristicsForAskForDevicesRef with UserName:=====>>",writableCharacteristicsForAskForDevicesRef);
+                  database()
+                    .ref(writableCharacteristicsForAskForDevicesRef)
+                      .set({
+                        description: 'Characteristics discovered..',
+                        name: 'Opening registration modal..',
+                        method: 'askForDevices',
+                      })
+                        .then(() => console.log('Data set for writableCharacteristicsForAskForDevices in devices screen'));
+
+                  analytics().logEvent('ask_for_devices', {
+                    description: 'Characteristics discovered..',
+                    detail: 'Opening registration modal..', 
+                    number: '1465',
+                  })
+                  */
                   this.setState({
                     bleMessage: 'Characteristics discovered..',
                     waitingDeviceLoader: true
@@ -1246,9 +2016,37 @@ class Devices extends Component {
                        this.handleConnectivityNotifications(this.deviceNotificationChar);
                        this.handleDeviceDiscoveryNotifications(this.deviceProvisionChar);
                        this.sendDiscoveryRequest(this.deviceDiscoverChar, device);
+                       /*
+                       ================================================================
+                         Uncomment to use realtime database of firebase 
+                       ================================================================
+                        let deviceCharacteristicsFoundForAskForDevicesRef = this.getUniqueIDForReference() + 'deviceCharacteristicsFoundForAskForDevices'
+                        console.log("deviceCharacteristicsFoundForAskForDevicesRef with UserName:=====>>",deviceCharacteristicsFoundForAskForDevicesRef);
+                        database()
+                          .ref(deviceCharacteristicsFoundForAskForDevicesRef)
+                            .set({
+                              description: 'sending to the notify',
+                              method: 'askForDevices',
+                            })
+                              .then(() => console.log('Data set for deviceCharacteristicsFoundForAskForDevices in devices screen'));\
+                        */
                     }
                   else {
                     alert("One of the required characteristic not found in connected gateway. Disconnecting..");
+                    /*
+                    ================================================================
+                      Uncomment to use analytics and realtime database of firebase 
+                    ================================================================
+                    let deviceCharacteristicsNotFoundForAskForDevicesRef = this.getUniqueIDForReference() + 'deviceCharacteristicsNotFoundForAskForDevicesRef'
+                    console.log("deviceCharacteristicsNotFoundForAskForDevicesRef with UserName:=====>>",deviceCharacteristicsNotFoundForAskForDevicesRef);
+                    database()
+                      .ref(deviceCharacteristicsNotFoundForAskForDevicesRef)
+                          .set({
+                            description: 'One of the required characteristic not found in connected gateway. Disconnecting..',
+                            method: 'askForDevices',
+                          })
+                            .then(() => console.log('Data set for deviceCharacteristicsNotFoundForAskForDevicesRef in devices screen'));
+                    */
                   }
                 }
               }
@@ -1259,6 +2057,27 @@ class Devices extends Component {
       .catch((error) => {
         if (error.errorCode === 205) {
           console.log("ErrorMessage:" + error.message);
+          /*
+          ================================================================
+            Uncomment to use analytics and realtime database of firebase 
+          ================================================================
+          let errorForAskForDevicesRef = this.getUniqueIDForReference() + 'errorForAskForDevicesRef'
+          console.log("errorForAskForDevicesRef with UserName:=====>>",errorForAskForDevicesRef);
+          database()
+            .ref(errorForAskForDevicesRef)
+              .set({
+                description: 'Unable to connect device......',
+                errorMessage: error.message,
+                errorCode: error.errorCode,
+                method: 'askForDevices',
+              })
+                .then(() => console.log('Data set for errorForAskForDevicesRef in devices screen'));
+          analytics().logEvent('ask_for_devices', {
+            description: 'ErrorMessage',
+            detail: error.message, 
+            number: '1522',
+          })
+          */
           this.props.onRemoveDevice(device.id);
           setTimeout(() => {
             this.checkForGatewayConnection();
@@ -1269,6 +2088,28 @@ class Devices extends Component {
             bleMessage: 'Error: Unable to connect to Gateway. Please try adding sensor again.',
             waitingDeviceLoader: false
           })
+          /*
+          ================================================================
+            Uncomment to use analytics and realtime database of firebase 
+          ================================================================
+          let errorToConnectForAskForDevicesRef = this.getUniqueIDForReference() + 'errorToConnectForAskForDevicesRef'
+          console.log("errorToConnectForAskForDevicesRef with UserName:=====>>",errorToConnectForAskForDevicesRef);
+          database()
+            .ref(errorToConnectForAskForDevicesRef)
+              .set({
+                description: 'Sensor is already disconnected.',
+                errorMessage: error.message,
+                errorCode: error.errorCode,
+                method: 'askForDevices',
+              })
+                .then(() => console.log('Data set for errorToConnectForAskForDevices in devices screen'));
+
+          analytics().logEvent('ask_for_devices', {
+            description: 'Sensor is already disconnected.',
+            detail: error.message, 
+            number: '1537',
+          })
+          */
           console.log("Error: " + error.message)
           console.log("ErrorCode:" + error.errorCode)
           device.cancelConnection().catch(error => {
@@ -1281,6 +2122,28 @@ class Devices extends Component {
 
   sendDiscoveryRequest = (characteristic, device) => {
     console.log("Sending discovery request..");
+    /*
+    ================================================================
+      Uncomment to use analytics and realtime database of firebase 
+    ================================================================
+    let sendDiscoveryRequestRef = this.getUniqueIDForReference() + 'sendDiscoveryRequest'
+    console.log("sendDiscoveryRequestRef with UserName:=====>>",sendDiscoveryRequestRef);
+    database()
+      .ref(sendDiscoveryRequestRef)
+          .set({
+              description: 'Sending discovery request..',
+              method: 'sendDiscoveryRequest',
+              name: device.name,
+              id: device.id,
+          })
+            .then(() => console.log('Data set for sendDiscoveryRequest in devices screen'));
+    analytics().logEvent('send_discovery_request', {
+      description: 'Sending discovery request..',
+      number: '1553',
+      name: device.name,
+      id: device.id,
+    })
+    */
     let payload = { discoverDevices: 1 }
     if (!bleDebug) {
       this.setState({
@@ -1289,17 +2152,64 @@ class Devices extends Component {
         waitingDeviceLoader: true
       });
     }
+    console.log("Device name and id:=====>>",device.name,device.id);
+    if (Platform.OS === 'ios') {
+      deviceID = device.name.split(gateway_discovery_name_prefix).pop();
+      console.log("Gateway Mac ID : ====>",deviceID);
+    }
+    else {
+      deviceID = device.id
+    }
     this.writeCharacteristics(characteristic, payload, (this.deviceCharacteristics[device.id].mtu - 3), 'sendStartDiscoverDevice')
     this.provisionRequestSent = false;
   }
 
   handleDeviceDiscoveryNotifications = (deviceProvisionChar) => {
+    /*
+    ================================================================
+      Uncomment to use analytics and realtime database of firebase 
+    ================================================================
+    let handleDeviceDiscoveryNotificationsRef = this.getUniqueIDForReference() + 'handleDeviceDiscoveryNotifications'
+    console.log("handleDeviceDiscoveryNotificationsRef with UserName:=====>>",handleDeviceDiscoveryNotificationsRef);
+    database()
+      .ref(handleDeviceDiscoveryNotificationsRef)
+          .set({
+              description: 'Subscribing to provision characteristic..',
+              method: 'handleDeviceDiscoveryNotifications',
+          })
+            .then(() => console.log('Data set for handleDeviceDiscoveryNotifications in devices screen'));
+    analytics().logEvent('handle_Device_Discovery_Notifications', {
+      description: 'Subscribing to provision characteristic..',
+      number: '1580',
+    })
+    */
     console.log("Subscribing to provision characteristic..", deviceProvisionChar);
     let discoveryResponse = {};
     let validPayload = '';
 
     this.discoverCharSubscription = deviceProvisionChar.monitor((error, characteristic) => {
       if (error) {
+        /*
+        ================================================================
+          Uncomment to use analytics and realtime database of firebase 
+        ================================================================
+        let errorForhandleDeviceDiscoveryNotificationsRef = this.getUniqueIDForReference() + 'errorForhandleDeviceDiscoveryNotifications'
+        console.log("errorForhandleDeviceDiscoveryNotificationsRef with UserName:=====>>",errorForhandleDeviceDiscoveryNotificationsRef);
+        database()
+          .ref(errorForhandleDeviceDiscoveryNotificationsRef)
+            .set({
+              description: 'Error:',
+              errorMessage: error.message,
+              errorCode: error.errorCode,
+              method: 'handleDeviceDiscoveryNotifications',
+            })
+              .then(() => console.log('Data set for errorForhandleDeviceDiscoveryNotifications in devices screen'));
+        analytics().logEvent('handle_Device_Discovery_Notifications', {
+          description: 'Error',
+          detail: error.message,
+          number: '1580',
+        })
+        */
         console.log("Error:" + error.message + "\nErrorCode:" + error.errorCode + '\nDiscoverDeviceNotificationSubscription');
         if (this.state.errorCode === 1) {
           console.log("Error:" + error.message + "\nErrorCode:" + error.errorCode + '\nDiscoverDeviceProvisionCallbackNotificationSubscription');
@@ -1347,10 +2257,9 @@ class Devices extends Component {
                   console.log('device--=', discoveryResponse);
                   this.setState({
                     discoveredDevices: discoveryResponse,
-                    showCancelButton: false
+                    showCancelButton: false,
                   });
-
-
+                  console.log("setting state after payload received successfully");
               }
               else alert("Invalid device object from Gateway: Required keys are missing");
             }
@@ -1370,6 +2279,24 @@ class Devices extends Component {
 
 
   handleProvisionCallbackNotifications = (deviceProvisionCallbackChar) => {
+    /*
+    ================================================================
+      Uncomment to use analytics and realtime database of firebase 
+    ================================================================
+    let handleProvisionCallbackNotificationsRef = this.getUniqueIDForReference() + 'handleProvisionCallbackNotifications'
+    console.log("handleProvisionCallbackNotifications with UserName:=====>>",handleProvisionCallbackNotificationsRef);
+    database()
+      .ref(handleProvisionCallbackNotificationsRef)
+          .set({
+              description: 'Subscribing to provision characteristic..',
+              method: 'handleProvisionCallbackNotifications',
+          })
+            .then(() => console.log('Data set for handleProvisionCallbackNotifications in devices screen'));
+    analytics().logEvent('handle_Provision_Callback_Notifications', {
+      description: 'Subscribing to provision callback characteristic..',
+      number: '1664',
+    })
+    */
     console.log("Subscribing to provision callback characteristic..");
     let provisionCallbackResponse = {};
     let validPayload = bleDebug ? [] : '';
@@ -1377,6 +2304,27 @@ class Devices extends Component {
       console.log('hello msg');
 
       if (error) {
+        /*
+        ================================================================
+          Uncomment to use analytics and realtime database of firebase 
+        ================================================================
+        let errorForhandleProvisionCallbackNotificationsRef = this.getUniqueIDForReference() + 'errorForhandleProvisionCallbackNotifications'
+        console.log("errorForhandleProvisionCallbackNotificationsRef with UserName:=====>>",errorForhandleProvisionCallbackNotificationsRef);
+        database()
+          .ref(errorForhandleProvisionCallbackNotificationsRef)
+            .set({
+              description: 'Error:',
+              errorMessage: error.message,
+              errorCode: error.errorCode,
+              method: 'handleProvisionCallbackNotifications',
+            })
+              .then(() => console.log('Data set for errorForhandleProvisionCallbackNotifications in devices screen'));
+        analytics().logEvent('handle_Provision_Callback_Notifications', {
+          description: 'Error',
+          detail: error.message,
+          number: '1676',
+        })
+        */
         console.log("Error:" + error.message + "\nErrorCode:" + error.errorCode + '\nDiscoverDeviceProvisionCallbackNotificationSubscription');
         if (this.state.errorCode === 1) {
           console.log("Error:" + error.message + "\nErrorCode:" + error.errorCode + '\nDiscoverDeviceProvisionCallbackNotificationSubscription');
@@ -1387,11 +2335,41 @@ class Devices extends Component {
           } else if (this.state.deviceRegistrationModalVisible) {
             this.setState({ deviceRegistrationModalVisible: false, isRegistrationProcessCompleted: true, callbackRegistredDevices: 0 })
           }
+          /*
+          ================================================================
+            Uncomment to use analytics and realtime database of firebase 
+          ================================================================
+          let errorToProvisionForhandleProvisionCallbackNotificationsRef = this.getUniqueIDForReference() + 'errorToProvisionForhandleProvisionCallbackNotifications'
+          console.log("errorToProvisionForhandleProvisionCallbackNotificationsRef with UserName:=====>>",errorToProvisionForhandleProvisionCallbackNotificationsRef);
+          database()
+            .ref(errorToProvisionForhandleProvisionCallbackNotificationsRef)
+              .set({
+                description: 'Provisioning Devices Failed.',
+                errorMessage: error.message,
+                errorCode: error.errorCode,
+                method: 'handleProvisionCallbackNotifications',
+              })
+              .then(() => console.log('Data set for errorToProvisionForhandleProvisionCallbackNotifications in devices screen'));
+          analytics().logEvent('handle_Provision_Callback_Notifications', {
+            description: 'Provisioning Devices Failed.',
+            number: '1690',
+          })
+          */
           Alert.alert('Provisioning Devices Failed.', 'Please try again.');
         }
       }
       else {
        let message = Base64.atob(characteristic.value);
+       /*
+       ================================================================
+         Uncomment to use analytics of firebase 
+       ================================================================
+       analytics().logEvent('handle_Provision_Callback_Notifications', {
+        description: 'DeviceProvisionCallbackMessage',
+        detail: message,
+        number: '1699',
+      })
+      */
         console.log("DeviceProvisionCallbackMessage:" + message);
         console.log("DeviceProvisionCallbackPayload:" + bleDebug ? JSON.stringify(validPayload) : validPayload)
         if (message === Constant.BLE_PAYLOAD_PREFIX) {
@@ -1414,6 +2392,7 @@ class Devices extends Component {
                 if (deviceObj.hasOwnProperty('deviceName') && deviceObj.hasOwnProperty('deviceType') ) {
 
                   payload.deviceUId = device.sensorId;
+                  // payload.deviceUId = device.id;
                   payload.device_name = deviceObj.deviceName;
                   payload.device_type = deviceObj.deviceType;
                   payload.eui64 = deviceObj.eui64;
@@ -1444,6 +2423,9 @@ class Devices extends Component {
              console.log("--------------------------------------",sensors);
              AsyncStorage.setItem('sensorList',JSON.stringify(sensors)).then((token) => {
                                  this.setState({sensors});
+                                 this.setState({ deviceRegistrationModalVisible:false,isRegistrationProcessCompleted: true, errorCode: 1 })
+                                 this.onTimeRegistredDevices = 0;
+                                 this._onRefresh();
                                  }).catch((error) => {
                                          console.log('error in saving name', error);
                                   })
@@ -1478,7 +2460,7 @@ class Devices extends Component {
       const response = await fetch(url, { method: "GET", headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' } })
       if (response.ok) {
         const result = await response.json();
-        console.log("response in json---" + JSON.stringify(result));
+        console.log("Registered sensor response in json---" + JSON.stringify(result));
         AsyncStorage.setItem('sensorList', JSON.stringify(result['sensors']));
         this.setState({ sensors: result['sensors'] })
       }
@@ -1502,7 +2484,24 @@ class Devices extends Component {
           bleMessage: 'Searching for Available Gateway Over BLE'
         })
       }
-
+      /*
+      ================================================================
+        Uncomment to use analytics and realtime database of firebase 
+      ================================================================
+      let scanAndConnectRef = this.getUniqueIDForReference() + 'scanAndConnect'
+      console.log("scanAndConnectRef with UserName:=====>>",scanAndConnectRef);
+      database()
+        .ref(scanAndConnectRef)
+          .set({
+            description: 'Started device scan...',
+            method: 'scanAndConnect',
+          })
+            .then(() => console.log('Data set for scanAndConnect in devices screen'));
+      analytics().logEvent('scan_And_Connect', {
+        description: 'Started device scan...',
+        number: '1818',
+      })
+      */
       console.log("Started device scan...");
        this.timeOutValueProvision = setTimeout(() => {
                      this.setState({ deviceDiscoveryModalVisible: false, waitingDeviceLoader: false });
@@ -1517,7 +2516,7 @@ class Devices extends Component {
           if (error.errorCode === 101) {
             //Device is not authorized to use BluetoothLE
             if (Platform.OS === 'ios') {
-              alert(appName + ' app wants to use location services.. please provide access.')
+              alert(appName + ' app wants to use bluetooth services.. please provide access.')
             }
             else {
               Promise.resolve(requestLocationPermission())
@@ -1532,8 +2531,15 @@ class Devices extends Component {
                       waitingDeviceLoader: false
                     })
                   }
+                  console.log("Scanning for gateway..")
                   this.scanAndConnect(inBackground);
                 });
+            }
+          }
+          else if (error.errorCode === 102) {
+            //BluetoothLE is powered off
+            if (Platform.OS === 'ios') {
+              alert('Please enable the Bluetooth to get connected with the nearby devices.')
             }
           }
           else if (error.errorCode === 601) {
@@ -1569,19 +2575,67 @@ class Devices extends Component {
           return;
         }
         if (device.name && device.id) {
+          /*
+          ================================================================
+            Uncomment to use analytics and realtime database of firebase 
+          ================================================================
+          let deviceFoundForScanAndConnectRef = this.getUniqueIDForReference() + 'deviceFoundForscanAndConnect'
+          console.log("deviceFoundForScanAndConnectRef with UserName:=====>>",deviceFoundForScanAndConnectRef);
+          database()
+            .ref(deviceFoundForScanAndConnectRef)
+              .set({
+                description: 'Found device name and id',
+                method: 'scanAndConnect',
+                id: device.id,
+                name: device.name,
+              })
+                .then(() => console.log('Data set for deviceFoundForScanAndConnect in devices screen'));
+          analytics().logEvent('scan_And_Connect', {
+            description: 'Found device name and id',
+            number: '1903',
+            id: device.id,
+            name: device.name,
+          })
+          */
+          console.log("======>> Found device name and id <<=====",device.name,device.id);
           this.connectedBle = device;
-          console.log("Gateway Name:" + device.name + "\nDeviceId:" + device.id);
-          console.log(this.growAreaUId + "=" + device.id + "=");
+          if (Platform.OS === 'ios') {
+            deviceID = device.name.split(gateway_discovery_name_prefix).pop();
+            console.log("Scanning Gateway Mac ID : ====>",deviceID);
+          }
+          else {
+            deviceID = device.id
+          }
+          console.log("Gateway Name:" + device.name + "\nDeviceId:" + deviceID);
+          console.log(this.growAreaUId + "=" + deviceID + "=");
 
-            if (bleDebug) this.growAreaUId = device.id;
+            if (bleDebug) this.growAreaUId = deviceID;
             clearTimeout(this.timeOutValueProvision);
             this.props.bleManager.stopDeviceScan();
             this.props.onSignoutDisconnect(device)
             console.log("Connecting to Gateway");
-            this.GatewayMacID = device.id;
-            if(!this.growAreaId) this.growAreaId = "gateway-"+device.id;
+            /*
+            ================================================================
+                      Uncomment to use analytics of firebase 
+            ================================================================
+            analytics().logEvent('scan_And_Connect', {
+              description: 'Connecting to Gateway',
+              number: '1923',
+            })
+            */
+            this.GatewayMacID = deviceID;
+            if(!this.growAreaId) this.growAreaId = "gateway-"+deviceID;
             this.bleDevice=device;
             if (!inBackground) {
+              /*
+              ================================================================
+                       Uncomment to use analytics of firebase 
+              ================================================================
+              analytics().logEvent('scan_And_Connect', {
+                description: 'Connecting to EFR32Gateway',
+                number: '1934',
+              })
+              */
               this.setState({
                 bleMessage: 'Connecting to EFR32Gateway',
                 waitingDeviceLoader: true
@@ -1594,6 +2648,16 @@ class Devices extends Component {
     }
     else {
       this.props.onSetBleManager(new BleManager());
+      /*
+      ================================================================
+                  Uncomment to use analytics of firebase 
+      ================================================================
+      analytics().logEvent('scan_And_Connect', {
+        description: 'Scanning for gateway..',
+        number: '1950',
+      })
+      */
+      console.log("Scanning for gateway..")
       this.scanAndConnect(inBackground);
     }
   }
@@ -1610,7 +2674,15 @@ scanAndConnectForDeleteSensor = (inBackground,payload,sensorId,eui64) => {
                 bleMessage: 'Searching for ' + (this.growAreaName ? "'" + this.growAreaName + "'" : 'Grow house (gateway).')
               })
       }
-
+      /*
+      ================================================================
+                Uncomment to use analytics of firebase 
+      ================================================================
+      analytics().logEvent('scan_And_Connect_For_Delete_Sensor', {
+        description: 'Started device scan...',
+        number: '1972',
+      })
+      */
       console.log("Started device scan...");
       this.props.bleManager.startDeviceScan(null, null, (error, device) => {
 
@@ -1622,7 +2694,7 @@ scanAndConnectForDeleteSensor = (inBackground,payload,sensorId,eui64) => {
           if (error.errorCode === 101) {
             //Device is not authorized to use BluetoothLE
             if (Platform.OS === 'ios') {
-              alert(appName + ' app wants to use location services.. please provide access.')
+              alert(appName + ' app wants to use bluetooth services.. please provide access.')
             }
             else {
               Promise.resolve(requestLocationPermission())
@@ -1638,6 +2710,12 @@ scanAndConnectForDeleteSensor = (inBackground,payload,sensorId,eui64) => {
                   }
                   this.scanAndConnectForDeleteSensor(inBackground,payload,sensorId,eui64);
                 });
+            }
+          }
+          else if (error.errorCode === 102) {
+            //BluetoothLE is powered off
+            if (Platform.OS === 'ios') {
+              alert('Please enable the Bluetooth to get connected with the nearby devices.')
             }
           }
           else if (error.errorCode === 601) {
@@ -1664,6 +2742,15 @@ scanAndConnectForDeleteSensor = (inBackground,payload,sensorId,eui64) => {
           }
           else {
             console.log(error.errorCode + ":" + error.message);
+            /*
+            ================================================================
+                      Uncomment to use analytics of firebase 
+            ================================================================
+            analytics().logEvent('scan_And_Connect_For_Delete_Sensor', {
+              description: error.message,
+              number: '2043',
+            })
+            */
             if (!inBackground) {
               this.setState({
                 bleMessage: 'Gateway scan failed.',
@@ -1680,16 +2767,36 @@ scanAndConnectForDeleteSensor = (inBackground,payload,sensorId,eui64) => {
           this.connectedBle = device;
           console.log("Gateway Name:" + device.name + "\nDeviceId:" + device.id);
          console.log('Gateway Selected.....',this.props.selectedGrowArea);
+         /*
+         ================================================================
+                    Uncomment to use analytics of firebase 
+         ================================================================
+         analytics().logEvent('scan_And_Connect_For_Delete_Sensor', {
+          description: 'Gateway Selected.....',
+          number: '2063',
+          id: device.id,
+          name: device.name,
+        })
+        */
          if(this.props.selectedGrowArea)
          {
             if (device.name.indexOf(this.props.selectedGrowArea.macId) !== -1 || bleDebug) {
-                if (bleDebug) this.growAreaUId = device.id;
+                if (bleDebug) this.growAreaUId = deviceID;
 
                 clearTimeout(this.timeOutValue);
                 this.props.bleManager.stopDeviceScan();
                 this.props.onSignoutDisconnect(device)
+                /*
+                ================================================================
+                        Uncomment to use analytics of firebase 
+                ================================================================
+                analytics().logEvent('scan_And_Connect_For_Delete_Sensor', {
+                  description: 'Connecting to Gateway for deletion',
+                  number: '2077',
+                })
+                */
                 console.log("Connecting to Gateway for deletion");
-                this.GatewayMacID = device.id;
+                this.GatewayMacID = deviceID;
                 if (!inBackground) {
                     this.setState({
                          waitingDeviceLoader: false
@@ -1709,6 +2816,15 @@ scanAndConnectForDeleteSensor = (inBackground,payload,sensorId,eui64) => {
           {
             clearTimeout(this.timeOutValue);
             this.props.bleManager.stopDeviceScan();
+            /*
+            ================================================================
+                      Uncomment to use analytics of firebase 
+            ================================================================
+            analytics().logEvent('scan_And_Connect_For_Delete_Sensor', {
+              description: 'Connecting to Gateway for deletion',
+              number: '2102',
+            })
+            */
             console.log("Connecting to Gateway for deletion");
             this.GatewayMacID = device.id;
             if (!inBackground) {
@@ -1729,6 +2845,35 @@ scanAndConnectForDeleteSensor = (inBackground,payload,sensorId,eui64) => {
       this.scanAndConnectForDeleteSensor(inBackground,payload,sensorId,eui64);
     }
   }
+  getDeviceUID(uID){
+    var deviceDisplayID = "";
+    if (Platform.OS === 'ios') {
+      deviceDisplayID = uID.slice(-12)
+      var parts = deviceDisplayID.match(/.{1,2}/g);
+      deviceDisplayID = parts.join(":");
+      return deviceDisplayID;
+    }
+    else {
+      return uID;
+    }
+  }
+  /*
+  ================================================================
+        Uncomment to use realtime database of firebase 
+  ================================================================
+  getUniqueID(uniqueID) {
+    var uniqueIDString = "";
+    uniqueIDString = uniqueID.substring(0, uniqueID.indexOf("@"));
+    uniqueIDString = uniqueIDString.replace(".","");
+    this.setState({userName: uniqueIDString});
+    return uniqueIDString;
+  }
+  getUniqueIDForReference() {
+    var uniqueIDString = "";
+    uniqueIDString = '/users/' + this.state.userName + '/';
+    return uniqueIDString;
+  }
+  */
   scanAndConnectForSoftwareSensor = (inBackground) => {
     this.alreadyRegistredSensors = this.alreadyRegistredSensor(this.state.sensors);
     let discoveredSoftwareSensor = {};
@@ -1740,8 +2885,16 @@ scanAndConnectForDeleteSensor = (inBackground,payload,sensorId,eui64) => {
             bleMessage: 'Searching for Available Sensors Over BLE....'
           })
         }
-
-        console.log("Started device scan...");
+        /*
+        ================================================================
+                    Uncomment to use analytics of firebase 
+        ================================================================
+        analytics().logEvent('scanAndConnectForSoftwareSensor', {
+          description: 'Started device scan for software sensor...',
+          number: '2149',
+        })
+        */
+        console.log("Started device scan for software sensor...");
          this.timeOutValueProvision = setTimeout(() => {
                        this.setState({ modalVisibleForSoftwareSensor: false, waitingDeviceLoader: false });
                        this.props.bleManager.stopDeviceScan();
@@ -1757,7 +2910,7 @@ scanAndConnectForDeleteSensor = (inBackground,payload,sensorId,eui64) => {
             if (error.errorCode === 101) {
               //Device is not authorized to use BluetoothLE
               if (Platform.OS === 'ios') {
-                alert(appName + ' app wants to use location services.. please provide access.')
+                alert(appName + ' app wants to use bluetooth services.. please provide access.')
               }
               else {
                 Promise.resolve(requestLocationPermission())
@@ -1773,6 +2926,12 @@ scanAndConnectForDeleteSensor = (inBackground,payload,sensorId,eui64) => {
                     }
                     this.scanAndConnectForSoftwareSensor(inBackground);
                   });
+              }
+            }
+            else if (error.errorCode === 102) {
+              //BluetoothLE is powered off
+              if (Platform.OS === 'ios') {
+                alert('Please enable the Bluetooth to get connected with the nearby devices.')
               }
             }
             else if (error.errorCode === 601) {
@@ -1808,10 +2967,49 @@ scanAndConnectForDeleteSensor = (inBackground,payload,sensorId,eui64) => {
             return;
           }
           console.log('already registered sensor mac id',this.alreadyRegistredSensors);
+          console.log("Device details:=====>>",device.id,device.name);
+          /*
+          ================================================================
+                      Uncomment to use analytics of firebase 
+          ================================================================
+          analytics().logEvent('device_details', {
+            id: device.id,
+            name: device.name,
+            description: 'Device details for already registered sensor mac id',
+          })
+          */
           if (device.name && device.id && device.name.startsWith(software_sensor_discovery_name_prefix) && !(this.alreadyRegistredSensors.includes(device.id))) {
              clearTimeout(this.timeOutValueProvision);
+             this.bleDevice=device;
               console.log('device found so stop interval and scanning');
+              /*
+              ================================================================
+                      Uncomment to use analytics of firebase 
+              ================================================================
+              analytics().logEvent('device_found', {
+                id: device.id,
+                name: device.name,
+                description: 'device found so stop interval and scanning',
+              })
+              */
               this.props.bleManager.stopDeviceScan();
+              console.log("Scanning device name :", device.name);
+              let deviceID = ""
+              var deviceDisplayID = ""
+              if (Platform.OS === 'ios') {
+                deviceID = device.id
+                deviceDisplayID = deviceID.slice(-12)
+                var parts = deviceDisplayID.match(/.{1,2}/g);
+                deviceDisplayID = parts.join(":");
+                this.displayDeviceID = deviceDisplayID
+                console.log("Scanning Sensor Mac ID : ====>",deviceID);
+                console.log("Display Sensor Mac ID : ====>",deviceDisplayID);
+              }
+              else {
+                deviceID = device.id
+                deviceDisplayID = device.id
+                this.displayDeviceID = deviceDisplayID
+              }
 
                 let payload = {};
                   payload.decision = false;
@@ -1819,11 +3017,11 @@ scanAndConnectForDeleteSensor = (inBackground,payload,sensorId,eui64) => {
                   payload.device_type = Constant.SENSOR_TYPE;
                   payload.description = 'EFR32';
                   payload.gatewayId = this.state.gateways[0].gatewayId;
-                  payload.deviceUId = device.id;
-                  payload.eui64 = device.id;
+                  payload.deviceUId = deviceID;
+                  payload.eui64 = deviceDisplayID;
                   payload.sensorId = '';
-                  payload.id = device.id;
-                  discoveryResponse[device.id] = payload;
+                  payload.id = deviceID;
+                  discoveryResponse[deviceID] = payload;
                   console.log('device--==', discoveryResponse);
                   this.setState({discoveredSoftwareSensor:discoveryResponse})
 
@@ -1890,6 +3088,22 @@ scanAndConnectForDeleteSensor = (inBackground,payload,sensorId,eui64) => {
   }
 
   tryDeviceConnection = (device, inBackground) => {
+    /*
+    ================================================================
+          Uncomment to use realtime database of firebase 
+    ================================================================
+    let tryDeviceConnectionRef = this.getUniqueIDForReference() + 'tryDeviceConnection'
+    console.log("tryDeviceConnectionRef with UserName:=====>>",tryDeviceConnectionRef);
+    database()
+      .ref(tryDeviceConnectionRef)
+        .set({
+          id: device.id,
+          name: device.name,
+          description: 'Discovering services and characteristics...',
+          method: 'tryDeviceConnection',
+        })
+        .then(() => console.log('Data set for tryDeviceConnection in devices screen'));
+    */
     device.connect()
       .then((device) => {
         console.log("Gateway connected");
@@ -2020,12 +3234,15 @@ scanAndConnectForDeleteSensor = (inBackground,payload,sensorId,eui64) => {
                      color: Constant.RED_COLOR,
                   },
                   backButton: {
+                    title: 'Previous',
                     color: '#fff',
+                    showTitle: true,
                    // icon:require('../../assets/images/back.png')
                   },
                   title: {
-                    text: "Previous",
+                    // text: "Previous",
                     color: '#fff',
+                    visible: Platform.OS === 'android',
                   }
                 }
               }
@@ -2175,7 +3392,6 @@ async updateSensorName (value,device)
   renderControls(info) {
 
         if (info.item.deviceUId) {
-
           let timeStamp = [];
           let timeStampToDisplay;
 
@@ -2185,16 +3401,16 @@ async updateSensorName (value,device)
                     <View style={{ flexDirection: 'column', color: '#fff', width: '58%'}}>
                         <Text style={{ alignSelf: 'flex-start', color: '#fff', fontWeight: 'bold', fontSize: 17 }}>{debug ? info.item.eui64 + '-' : ''}{info.item.device_name}</Text>
                         <Text style={{ alignSelf: 'flex-start', color: '#fff', fontWeight: 'bold', fontSize: 17 }}>{debug ? info.item.eui64 + '-' : ''}{info.item.device_type}</Text>
-                        <Text style={{ color: '#fff', fontSize: 17  }}>{debug ? info.item.id + '-' : ''}{info.item.eui64}</Text>
+                        <Text style={{ color: '#fff', fontSize: 17  }}>{debug ? info.item.id + '-' : ''}{this.getDeviceUID(info.item.eui64)}</Text>
                     </View>
                     <View style={{flexDirection: 'row', alignItems: "center",marginLeft: '12%',height: '70%',marginTop: '2.5%'}}>
-                    <MaterialIcon name="edit" size={24} style={{ padding: (0, 0, 0, 10), color: '#fff',backgroundColor: Constant.BLUE_COLOR }} onPress={() =>
+                    <Entypo name="edit" size={24} style={{ padding: (0, 0, 0, 10), color: '#fff',backgroundColor: Constant.BLUE_COLOR }} onPress={() =>
                     {
                         this.setState({editedSensor:info.item});
                         this.showRenameModal();
                     }} />
 
-                   <MaterialIcon name="delete" size={24} style={{ padding: (0, 0, 0, 10), color: '#fff',marginLeft: '7%',backgroundColor: Constant.BLUE_COLOR }} onPress={() =>
+                   <MaterialCommunityIcons name="delete" size={24} style={{ padding: (0, 0, 0, 10), color: '#fff',marginLeft: '7%',backgroundColor: Constant.BLUE_COLOR }} onPress={() =>
                    Alert.alert('Delete Sensor', 'Are you sure you want to delete ' + info.item.device_name + '?',
                     [
                     {
@@ -2236,7 +3452,7 @@ async updateSensorName (value,device)
                          secureTextEntry={false}
                          buttonsStyle={{ borderColor: 'white' }}
                          textCancelStyle={{ color: 'white',fontSize: RFPercentage(2.5) }}
-                         submitTextStyle={{ color: 'white', fontStyle: 'bold' ,fontSize: RFPercentage(2.5)}}
+                         submitTextStyle={{ color: 'white', fontWeight: 'bold' ,fontSize: RFPercentage(2.5)}}
                          cancelButtonText="CANCEL"
                          submitButtonText="RENAME"
                />
@@ -2280,7 +3496,6 @@ async updateSensorName (value,device)
       let devicesList;
       if (displayList) {
         if (displayList.length !== 0) {
-
               devicesList = (
                 <FlatList
                   data={displayList}
@@ -2408,7 +3623,7 @@ async updateSensorName (value,device)
                                             value={this.state.discoveredSoftwareSensor[info.item.id].device_name}
                                           />
                                         <Text style={{ fontSize: 10, marginTop: 5 }}>UId</Text>
-                                        <Text numberOfLines={1} style={{ fontSize: 12, fontWeight: "bold" }}>{info.item.id}</Text>
+                                        <Text numberOfLines={1} style={{ fontSize: 12, fontWeight: "bold" }}>{this.displayDeviceID}</Text>
                                  </View>
                                  <View style={{ width: '35%', flexDirection: 'column' }}>
                                           <Text style={{ fontSize: 10, marginTop: 5 }}>Sensor Type</Text>
@@ -2426,7 +3641,7 @@ async updateSensorName (value,device)
                                                 }
                                                 else {
 
-                                                  console.log("DeviceName:" + this.state.discoveredSoftwareSensor[info.item.id].device_name);
+                                                  console.log("Software Sensor DeviceName:" + this.state.discoveredSoftwareSensor[info.item.id].device_name);
                                                   let discoveredSoftwareSensor = this.state.discoveredSoftwareSensor;
                                                   console.log(JSON.stringify(discoveredSoftwareSensor));
 
@@ -2637,9 +3852,10 @@ async updateSensorName (value,device)
                                 this.humidityCharSubscription.remove();
                                if(this.temperatureCharSubscription)
                                 this.temperatureCharSubscription.remove();
-
-                               this.props.bleManager.destroy();
-                               this.props.onSetBleManager(new BleManager());
+                                // if (Platform.OS === 'android') {
+                                  this.props.bleManager.destroy();
+                                  this.props.onSetBleManager(new BleManager());
+                                // }
 
                                this.showSoftwareSensorDiscoveryModal(true,false,true,false);
                         }

@@ -5,7 +5,9 @@ import LoginScreen from './src/screens/Login';
 import SideDrawer from './src/screens/SideDrawer';
 import SettingsScreen from './src/screens/Settings';
 import HistoricalChart from './src/screens/HistoricalChart';
-import { AsyncStorage, Alert } from 'react-native';
+import { Alert } from 'react-native';
+import { AsyncStorage } from 'react-native';
+// import { AsyncStorage } from '@react-native-community/async-storage';
 import { Navigation } from 'react-native-navigation';
 import * as Constant from './src/Constant';
 import { debug, allowExceptionsInDevMode } from './app.json';
@@ -15,9 +17,8 @@ import Icon from 'react-native-vector-icons/Ionicons';
 import RNRestart from 'react-native-restart'; // Import package from node modules 
 import Dashboard from './src/screens/Dashboard';
 import { setJSExceptionHandler, setNativeExceptionHandler } from 'react-native-exception-handler';
-import { Platform } from 'react-native';
+import { Platform,Text,TextInput } from 'react-native';
 import { RFPercentage, RFValue } from "react-native-responsive-fontsize";
-
 
 let tabCount = 0;
 let position = false;
@@ -89,6 +90,13 @@ setNativeExceptionHandler(
 
 
 export default (pageIndex) => {
+Text.defaultProps = Text.defaultProps || {};
+Text.defaultProps.allowFontScaling = false;
+Text.defaultProps.minimumFontScale = 1;
+
+TextInput.defaultProps = TextInput.defaultProps || {};
+TextInput.defaultProps.allowFontScaling = false;
+TextInput.defaultProps.minimumFontScale = 1;
   Navigation.setDefaultOptions({
     bottomTabs: {
       hideShadow: true,
@@ -121,79 +129,96 @@ export default (pageIndex) => {
 
 const startTABBasedNavigation = (pageIndex, iconSrc) => {
   let index = pageIndex ? pageIndex : 0;
-  Navigation.setRoot({
-    root: {
-      sideMenu: {
-        id: 'SideMenu',
-        left: {
-          component: {
-            id: 'sideDrawer',
-            name: 'SideDrawer',
+  if (Platform.OS === 'ios') {
+    Navigation.setRoot({
+      root: {
+        stack: {
+          children: [
+            {
+              component: {
+                name: 'DashboardScreen'
+              }
+            }
+          ]
+        }
+      }
+    });
+  }
+  else {
+    Navigation.setRoot({
+      root: {
+        sideMenu: {
+          id: 'SideMenu',
+          left: {
+            component: {
+              id: 'sideDrawer',
+              name: 'SideDrawer',
+            },
           },
-        },
-        center: {
-          root: {
-
-          },
-          bottomTabs: {
-            id: 'BottomTabsId',
-            children: [
-             
-              {
-                stack: {
-                  id: 'CONTAINER',
-                  children: [{
-                    component: {
-                      name: 'DashboardScreen',
-                      options: {
-                        bottomTab: {
-                          icon: require('./assets/images/home.png'),
-                          iconColor:'#000000',
-                        },
-                        popGesture: true,
-                        sideMenu: {
-                          left: {
-                            visible: false,
+          center: {
+            root: {
+  
+            },
+            bottomTabs: {
+              id: 'BottomTabsId',
+              children: [
+               
+                {
+                  stack: {
+                    id: 'CONTAINER',
+                    children: [{
+                      component: {
+                        name: 'DashboardScreen',
+                        options: {
+                          bottomTab: {
+                            icon: require('./assets/images/home.png'),
+                            iconColor:'#000000',
+                          },
+                          popGesture: true,
+                          sideMenu: {
+                            left: {
+                              visible: false,
+                            }
+  
                           }
-
                         }
                       }
-                    }
-                  }]
-                }
-              },
-            ],
-            options: {
-              bottomTabs: {
-                hideShadow: true,
-                visible:false,
-                currentTabIndex: index,
-                backgroundColor: 'white'
-
-              },
-              popGesture: true,
-              topBar: {
-                visible: false,
-               hideOnScroll: true,
-                drawBehind: true,
-                background: {
-                  color: Constant.PRIMARY_COLOR,
+                    }]
+                  }
                 },
-              },
-              layout: {
-                orientation: ['portrait'] // An array of supported orientations
+              ],
+              options: {
+                bottomTabs: {
+                  hideShadow: true,
+                  visible:false,
+                  currentTabIndex: index,
+                  backgroundColor: 'white'
+  
+                },
+                popGesture: true,
+                topBar: {
+                  visible: false,
+                 hideOnScroll: true,
+                  drawBehind: true,
+                  background: {
+                    color: Constant.PRIMARY_COLOR,
+                  },
+                },
+                layout: {
+                  orientation: ['portrait'] // An array of supported orientations
+                },
               },
             },
           },
         },
       },
-    },
-    options: {
-      layout: {
-        orientation: ['portrait'],
-      },
-    }
-  });
+      options: {
+        layout: {
+          orientation: ['portrait'],
+        },
+      }
+    });
+  }
 }
 
 Navigation.events().registerBottomTabSelectedListener(async (res) => {

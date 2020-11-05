@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CLIENT_ID</key>
+	<string>569438088100-jh3g8ni029qh4tgnoqduql6a11p64l5s.apps.googleusercontent.com</string>
+	<key>REVERSED_CLIENT_ID</key>
+	<string>com.googleusercontent.apps.569438088100-jh3g8ni029qh4tgnoqduql6a11p64l5s</string>
+	<key>API_KEY</key>
+	<string>AIzaSyAGsICvpp2ahGZ95-DoU32UG6CrYg6PQuE</string>
+	<key>GCM_SENDER_ID</key>
+	<string>569438088100</string>
+	<key>PLIST_VERSION</key>
+	<string>1</string>
+	<key>BUNDLE_ID</key>
+	<string>com.einfochips.efr32gateway</string>
+	<key>PROJECT_ID</key>
+	<string>efr32gateway</string>
+	<key>STORAGE_BUCKET</key>
+	<string>efr32gateway.appspot.com</string>
+	<key>IS_ADS_ENABLED</key>
+	<false/>
+	<key>IS_ANALYTICS_ENABLED</key>
+	<false/>
+	<key>IS_APPINVITE_ENABLED</key>
+	<true/>
+	<key>IS_GCM_ENABLED</key>
+	<true/>
+	<key>IS_SIGNIN_ENABLED</key>
+	<true/>
+	<key>GOOGLE_APP_ID</key>
+	<string>1:569438088100:ios:a0c4439716c95d7dba6f31</string>
+	<key>DATABASE_URL</key>
+	<string>https://efr32gateway.firebaseio.com</string>
+</dict>
+</plist>

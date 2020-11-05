@@ -71,9 +71,14 @@ class HistoricalChart extends Component {
         })
         this.setState({sensorLive});
         console.log("final object---"+JSON.stringify(sensorLive));
-        setTimeout(() => {
+        if (Platform.OS === 'ios') {
           this.connectAWSIOT();
-        }, 1000);
+        }
+        else {
+          setTimeout(() => {
+            this.connectAWSIOT();
+          }, 1000);
+        }
       }
       this.setState({ token, sensors }, () => {
       });
@@ -204,8 +209,9 @@ class HistoricalChart extends Component {
               // icon:require('../../assets/images/back.png')
             },
             title: {
-              text: "Previous",
+              // text: "Previous",
               color: '#fff',
+              visible: Platform.OS === 'android',
             }
           }
         }

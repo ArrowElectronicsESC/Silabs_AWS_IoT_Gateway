@@ -11,12 +11,13 @@ import { Navigation } from 'react-native-navigation';
 import { RFPercentage, RFValue } from "react-native-responsive-fontsize";
 const {width,height} = Dimensions.get('window');
 import Auth from '@aws-amplify/auth';
-import MaterialIcon from 'react-native-vector-icons/MaterialIcons';
+// import MaterialIcon from 'react-native-vector-icons/MaterialIcons';
+import Entypo from 'react-native-vector-icons/Entypo';
+import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons";
 import * as Urls from '../Urls';
 import { uiStartLoading,uiStopLoading } from '../store/actions/rootActions';
 import  DialogInput  from 'react-native-dialog-input-custom';
-
-
+import analytics from '@react-native-firebase/analytics';
 class Settings extends Component {
 
   static get options() {
@@ -43,6 +44,15 @@ class Settings extends Component {
   }
 
   componentDidAppear() {
+    /*
+    ================================================================
+              Uncomment to use analytics of firebase 
+    ================================================================
+    analytics().logEvent('settings_screen', {
+      description: '',
+      number: '49',
+    })
+    */
         AsyncStorage.multiGet(['accessToken','email','number','listGateway','emailNotify','SmsNotify']).then(response => {
           let token = response[0][1];
           let email = JSON.parse(response[1][1]);
@@ -76,7 +86,12 @@ class Settings extends Component {
       console.log('timer value on logout',global.timerValue);
       clearInterval(global.timerValue);
       global.timerValue = null;
-      this.props.bleManager.disable()
+      if (Platform.OS === 'android') {
+        this.props.bleManager.disable()
+      }
+      else {
+        this.props.bleManager.destroy()
+      }
       AsyncStorage.multiRemove(['accessToken','listGateway','sensorList']).then(()=> {
           console.log('successfully logged out');
         }).catch((error) => {
@@ -132,11 +147,14 @@ class Settings extends Component {
                color: Constant.RED_COLOR,
              },
              backButton: {
+              title: 'Previous',
                color: '#fff',
+               showTitle: true,
              },
              title: {
-               text: "Previous",
+              //  text: "Previous",
                color: '#fff',
+               visible: Platform.OS === 'android',
              }
            },
            layout: {
@@ -175,11 +193,14 @@ class Settings extends Component {
                  color: Constant.RED_COLOR,
                },
                backButton: {
+                 title: 'Previous',
                  color: '#fff',
+                 showTitle: true,
                },
                title: {
-                 text: "Previous",
+                //  text: "Previous",
                  color: '#fff',
+                 visible: Platform.OS === 'android',
                }
              },
              layout: {
@@ -315,7 +336,11 @@ class Settings extends Component {
           smsView = (
                      <View style={{width:'60%',flexDirection:'row'}}>
                       <TouchableOpacity onPress={() => {this.showModal()}}>
-                        <MaterialIcon name="edit" size={width * 0.056} style={{ paddingLeft: '12%',paddingTop: '12%', color: '#fff',height : width * 0.1,marginLeft: width * 0.09,width : width * 0.1,backgroundColor: Constant.RED_COLOR,borderRadius: 10,marginTop: '8%'}} />
+                        {/* <Entypo name="edit" size={width * 0.056} style={{ paddingLeft: '12%',paddingTop: '12%', color: '#fff',height : width * 0.1,marginLeft: width * 0.09,width : width * 0.1,backgroundColor: Constant.RED_COLOR,borderRadius: 10,marginTop: '8%'}} /> */}
+                        <View style={styles.editButtonView}>
+                          {/* <Text style={[styles.emailText,{textAlign: 'center',marginTop: '12%'}]}>Edit</Text> */}
+                          <Entypo name="edit" size={width * 0.056 } color= '#fff'/>
+                        </View>
                       </TouchableOpacity>
                         <TouchableOpacity  style={styles.buttonViewWithEdit} onPress ={() => {
                             this.updateNotificationValue (this.state.SmsNotify,'phoneNo')
@@ -336,7 +361,11 @@ class Settings extends Component {
            smsView = (
                       <View style={{width:'60%',flexDirection:'row'}}>
                        <TouchableOpacity onPress={() => {this.showModal()}}>
-                         <MaterialIcon name="edit" size={width * 0.056} style={{ paddingLeft: '12%',paddingTop: '12%', color: '#fff',height : width * 0.1,marginLeft: width * 0.09,width : width * 0.1,backgroundColor: Constant.RED_COLOR,borderRadius: 10,marginTop: '8%'}} />
+                         {/* <Entypo name="edit" size={width * 0.056} style={{ paddingLeft: '12%',paddingTop: '12%', color: '#fff',height : width * 0.1,marginLeft: width * 0.09,width : width * 0.1,backgroundColor: Constant.RED_COLOR,borderRadius: 10,marginTop: '8%'}} /> */}
+                        <View style={styles.editButtonView}>
+                        <Entypo name="edit" size={width * 0.056 } color= '#fff'/>
+                          {/* <Text style={[styles.emailText,{textAlign: 'center',marginTop: '12%'}]}>Edit</Text> */}
+                        </View>
                        </TouchableOpacity>
                        <View style={styles.buttonViewWithEdit}>
                         <Text style={[styles.emailText,{textAlign: 'center',marginTop: '12%'}]}>{this.state.SmsNotify}</Text>
@@ -349,6 +378,7 @@ class Settings extends Component {
 
       return (
         <View style={styles.container}>
+        {/* // <View style={[styles.container, { flex: 2 }]}> */}
         <View style={styles.greenBackgroundContainer} />
         <View style={styles.titleTextContainer}>
           <View style={{width:'60%'}}><Text style={styles.titleText}>Settings</Text></View>
@@ -379,8 +409,8 @@ class Settings extends Component {
                          dialogIsVisible={this.state.isVisible}
                          closeDialogInput={() => {this.showModal()}}
                          submitInput={(textValue) => this.updatePhNumber(textValue)}
-                         outerContainerStyle={{ backgroundColor: '#737373',opacity: 0.8}}
-                         containerStyle={{ backgroundColor: '#d91f2b', borderColor: 'black', borderWidth: 2}}
+                         outerContainerStyle={{ backgroundColor: 'rgba(0,0,0, 0.75)'}}
+                         containerStyle={{ backgroundColor: '#d91f2b', borderColor: 'black', borderWidth: 2,opacity: 1.0}}
                          titleStyle={{ color: 'white',fontSize : RFPercentage(3) }}
                          title="Mobile Number"
                          subTitleStyle={{ color: 'white' }}
@@ -391,12 +421,12 @@ class Settings extends Component {
                          secureTextEntry={false}
                          buttonsStyle={{ borderColor: 'white' }}
                          textCancelStyle={{ color: 'white',fontSize: RFPercentage(2.5) }}
-                         submitTextStyle={{ color: 'white', fontStyle: 'bold',fontSize: RFPercentage(2.5)}}
+                         submitTextStyle={{ color: 'white', fontWeight: 'bold',fontSize: RFPercentage(2.5)}}
                          cancelButtonText="CANCEL"
                          submitButtonText="SUBMIT"
               />
         </View>
-        <View style= {[styles.rectangle,{width: width * 0.6,marginLeft: '20%',marginTop: width * 0.135,height: height * 0.06}]}>
+        <View style= {[styles.rectangle,{width: width * 0.6,marginLeft: '20%',marginTop: width * 0.06,height: height * 0.06}]}>
           <TouchableOpacity onPress={() => {this.openGatewayPage()}}>
              <Text style={[styles.emailText,{marginTop: '4.5%'}]}>Configure Gateway</Text>
           </TouchableOpacity>
@@ -439,7 +469,7 @@ const styles = StyleSheet.create({
      marginRight: height * 0.05,
      marginLeft: height * 0.05,
      borderColor: Constant.RED_COLOR,
-     height: height * 0.49,
+     height: height * 0.52,
    },
    rectangle:
    {
@@ -476,8 +506,20 @@ const styles = StyleSheet.create({
       borderRadius: 10,
       marginTop: '4%',
       marginBottom: '0.05%',
-      marginLeft: width * 0.35,
+      marginLeft: width * 0.30,
 
+   },
+   editButtonView:
+   {
+         backgroundColor: Constant.RED_COLOR,
+         width: width * 0.15,
+         height: width * 0.1,
+         borderRadius: 10,
+         marginTop: '8%',
+         marginBottom: '0.05%',
+         marginLeft: width * 0.09,
+         paddingTop: '8%',
+         alignItems: "center",
    },
    buttonView:
    {
@@ -558,7 +600,7 @@ mapDispatchToProps = dispatch => {
   return {
     uiStartLoading : (message) => dispatch(uiStartLoading(message)),
     uiStopLoading : () => dispatch(uiStopLoading()),
-    onSetBleManager: (bleManager) => dispatch(setBleManager(bleManager))
+    // onSetBleManager: (bleManager) => dispatch(setBleManager(bleManager))
   }
 };
 

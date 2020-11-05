@@ -21,6 +21,8 @@ import { RFPercentage, RFValue } from "react-native-responsive-fontsize";
 const { width, height } = Dimensions.get('window');
 import Amplify, { PubSub } from 'aws-amplify';
 import { AWSIoTProvider } from '@aws-amplify/pubsub/lib/Providers';
+import analytics from '@react-native-firebase/analytics';
+import database from '@react-native-firebase/database';
 Amplify.addPluggable(new AWSIoTProvider(
   {
     aws_pubsub_region: '<AWS IOT core endpoint region>',
@@ -40,6 +42,13 @@ class Dashboard extends Component {
       console.log("BLE manager created on Dashboard page");
       this.props.onSetBleManager(new BleManager());
     }
+    else {
+      console.log("BLE Manager found on dashboard screen");
+      if (Platform.OS === 'ios') {
+        this.props.bleManager.destroy()
+        this.props.onSetBleManager(new BleManager());
+      }
+    }
     this.eventSubscription = Navigation.events().registerNavigationButtonPressedListener(this.MenuIconPrressed);
     this.state = {
       token: '',
@@ -48,7 +57,56 @@ class Dashboard extends Component {
   }
 
   async componentDidAppear() {
-    this.props.bleManager.enable()
+    console.log("Component did appear on dashboard screen");
+    if (Platform.OS === 'android') {
+      this.props.bleManager.enable()
+    }
+    else {
+      if (this.props.bleManager) {
+        console.log("Started device scan...");
+        this.timeOutValueProvision = setTimeout(() => {
+          this.props.bleManager.stopDeviceScan();
+          console.log("device scan stop in timeout");
+        }, 10000)
+        this.props.bleManager.startDeviceScan(null, null, async (error, device) => {
+          if (error) {
+            clearTimeout(this.timeOutValueProvision);
+            console.log('ErrorCode:' + error.errorCode);
+            if (error.errorCode === 101) {
+              //Device is not authorized to use BluetoothLE
+              alert(appName + ' app wants to use bluetooth services.. please provide access.')
+            }
+            else if (error.errorCode === 102) {
+              //BluetoothLE is powered off
+              alert('Please enable the Bluetooth to get connected with the nearby devices.')
+            }
+            else {
+              console.log(error.errorCode + ":" + error.message);
+            }
+            return;
+          }
+        });
+      }
+      else {
+        console.log("new ble manager");
+        this.props.onSetBleManager(new BleManager());
+      }
+    }
+    /* 
+    ================================================================
+      Uncomment to use analytics and realtime database of firebase 
+    ================================================================
+    database()
+        .ref('/users/dashboard')
+        .set({
+          name: 'Component did appear',
+        })
+        .then(() => console.log('Data set for component did appear on dashboard.'));
+    analytics().logEvent('dashboard_screen', {
+      description: '',
+      number: '63',
+    })
+    */
     await AsyncStorage.multiGet(['accessToken', 'listGateway', 'sensorList']).then(response => {
       let token = response[0][1];
       let gateways = JSON.parse(response[1][1]);
@@ -65,28 +123,43 @@ class Dashboard extends Component {
     console.log('Sensor list----------------------', this.state.sensors);
     this.alreadyRegistredSensorsList = await this.alreadyRegistredSensors(this.state.sensors);
     if (this.state.gateways != undefined && this.state.gateways.length !== 0) {
+      console.log("gateway state is defined");
       if (this.state.gateways[0].gatewayType == Constant.GATEWAY_TYPE_VALUE_SW && this.state.sensors.length !== 0) {
-        setTimeout(() => {
+        console.log("gateway type  is software");
+        if (Platform.OS === 'ios') {
           this.connectSensorAutomatically();
-        }, 1000);
-        if (!global.timerValue) {
-           let timer = setInterval(() => {
-          this.props.bleManager.enable()
-          this.connectSensorAutomatically();
-          console.log("10 sec timer called");
-        }, 10000);
-        console.log('timer after new cretion',timer);
-        global.timerValue = timer
         }
+        else {
+          setTimeout(() => {
+            this.connectSensorAutomatically();
+          }, 1000);
+        }
+        if (!global.timerValue) {
+            let timer = setInterval(() => {
+            if (Platform.OS === 'android') {
+              this.props.bleManager.enable()
+            }
+            this.connectSensorAutomatically();
+            console.log("10 sec timer called");
+          }, 10000);
+          console.log('timer after new cretion',timer);
+          global.timerValue = timer
+        }
+      }
+      else {
+        console.log("Destroy BLE Manager in component did appear");
+        this.props.bleManager.destroy()
       }
     }
 
   }
 
   alreadyRegistredSensors(registeredSensors) {
+    console.log("finding registered sensors list");
     try {
       var data = []
       if (registeredSensors != undefined && registeredSensors.length != 0) {
+        console.log("registered sensor is defined");
         registeredSensors.map((sensor) => {
           data.push(sensor.deviceUId);
         });
@@ -100,8 +173,10 @@ class Dashboard extends Component {
 
   connectSensorAutomatically = () => {
     console.log('in sensorConnect function gateways list --:', this.state.gateways);
+    console.log('Sensor list for connect sensor automatically----------------------', this.state.sensors);
     if (this.state.gateways != undefined && this.state.gateways.length !== 0) {
       if (this.state.gateways[0].gatewayType == Constant.GATEWAY_TYPE_VALUE_SW && this.state.sensors.length !== 0) {
+        console.log("Software gateway found in auto connect sensor method");
         this.props.bleManager.isDeviceConnected(this.state.sensors[0].deviceUId).then(isConnected => {
           console.log('first sensor isConnected', isConnected);
           if (!isConnected) {
@@ -111,10 +186,15 @@ class Dashboard extends Component {
           console.log('error:' + error);
         })
       }
+      else {
+        console.log("Destroy BLE Manager");
+        this.props.bleManager.destroy();
+      }
     }
   }
 
   scanAndConnectForSoftwareSensor = () => {
+    console.log("=====>> scan and connect for software sensor <<=====");
     if (this.props.bleManager) {
       console.log("Started device scan...");
       this.timeOutValueProvision = setTimeout(() => {
@@ -128,7 +208,7 @@ class Dashboard extends Component {
           if (error.errorCode === 101) {
             //Device is not authorized to use BluetoothLE
             if (Platform.OS === 'ios') {
-              alert(appName + ' app wants to use location services.. please provide access.')
+              // alert(appName + ' app wants to use bluetooth services.. please provide access.')
             }
             else {
               Promise.resolve(requestLocationPermission())
@@ -140,10 +220,16 @@ class Dashboard extends Component {
                 });
             }
           }
+          else if (error.errorCode === 102) {
+            //BluetoothLE is powered off
+            if (Platform.OS === 'ios') {
+              // alert('Please enable the Bluetooth to get connected with the nearby devices.')
+            }
+          }
           else if (error.errorCode === 601) {
             //Location services are disabled
             if (Platform.OS === 'ios') {
-              alert(appName + ' app wants to use location services.. please enable it.')
+              // alert(appName + ' app wants to use location services.. please enable it.')
             }
             else {
               RNAndroidLocationEnabler.promptForEnableLocationIfNeeded({ interval: 10000, fastInterval: 5000 })
@@ -181,11 +267,13 @@ class Dashboard extends Component {
       });
     }
     else {
+      console.log("new ble manager");
       this.props.onSetBleManager(new BleManager());
     }
   }
 
   connectCharacteristicsAndServices(device) {
+    console.log("Ask for connect characteristic and services in dashboard");
     console.log("Discovering services and characteristics...");
     device.discoverAllServicesAndCharacteristics()
       .then((device) => {
@@ -456,7 +544,10 @@ class Dashboard extends Component {
           visible: this.state.sideMenuVisible,
           enabled: Platform.OS === 'android'
         }
-      }
+      },
+      backButton: {
+        visible: false,
+      },
     })
   }
 
@@ -495,12 +586,15 @@ class Dashboard extends Component {
               color: Constant.RED_COLOR,
             },
             backButton: {
+              title: 'Previous',
               color: '#fff',
+              showTitle: true,
               // icon:require('../../assets/images/back.png')
             },
             title: {
-              text: "Previous",
+              // text: "Previous",
               color: '#fff',
+              visible: Platform.OS === 'android',
             }
           },
           layout: {
@@ -537,11 +631,14 @@ class Dashboard extends Component {
               color: Constant.RED_COLOR,
             },
             backButton: {
+              title: 'Previous',
               color: '#fff',
+              showTitle: true,
             },
             title: {
-              text: "Previous",
+              // text: "Previous",
               color: '#fff',
+              visible: Platform.OS === 'android',
             }
           },
           layout: {
@@ -579,11 +676,14 @@ class Dashboard extends Component {
               color: Constant.RED_COLOR,
             },
             backButton: {
+              title: 'Previous',
               color: '#fff',
+              showTitle: true,
             },
             title: {
-              text: "Previous",
+              // text: "Previous",
               color: '#fff',
+              visible: Platform.OS === 'android',
             }
           },
           layout: {
@@ -603,7 +703,7 @@ class Dashboard extends Component {
 
   render() {
     return (
-      <View style={[styles.container, { flex: 2 }]}>
+      <View style={[styles.container, { flex: 1 }]}>
         <View style={{ width: '40%', flexDirection: 'row', alignItems: 'flex-end', alignContent: 'flex-end', alignSelf: 'flex-end', justifyContent: 'flex-end' }}>
           <TouchableOpacity onPress={() => { this.openSettingPage() }}>
             <Image source={require('../../assets/images/setting.png')} style={styles.settingIcon} />
